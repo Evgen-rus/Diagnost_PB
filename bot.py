@@ -175,6 +175,7 @@ async def process_message(message: types.Message, state: FSMContext):
     6. Получает ответ от GPT, включая предложения связанных тем
     7. Обновляет состояние диалога
     8. Обновляет информацию об активности пользователя в базе данных
+    9. Автоматически сбрасывает контекст после 3 вопросов пользователя
     
     Args:
         message (types.Message): Объект сообщения Telegram с данными пользователя
@@ -217,6 +218,10 @@ async def process_message(message: types.Message, state: FSMContext):
         topics = data.get("topics", {"current": "", "history": [], "related_topics": {}})
         user_knowledge_level = data.get("user_knowledge_level", {"general": "beginner", "topics": {}})
         
+        # Счетчик сообщений пользователя для автоматического сброса контекста
+        message_counter = data.get("message_counter", 0)
+        message_counter += 1
+        
         # Создаем идентификатор сессии для логирования всех действий в рамках этого запроса
         session_id = f"msg_{int(datetime.datetime.now().timestamp())}"
         request_logger = get_user_logger(
@@ -224,6 +229,16 @@ async def process_message(message: types.Message, state: FSMContext):
             session_id=session_id,
             operation="process_message"
         )
+        
+        # Проверка на необходимость сброса контекста (каждый 3-й вопрос)
+        if message_counter > 0 and message_counter % 3 == 0:
+            request_logger.info(f"Автоматический сброс контекста после {message_counter} вопросов")
+            
+            # Сохраняем только системное сообщение, сбрасывая историю диалога
+            messages = [{"role": "system", "content": INTERVIEWER_PROMPT}]
+            
+            # Сбрасываем счетчик сообщений
+            message_counter = 0
         
         # Добавляем сообщение пользователя в историю
         messages.append({"role": "user", "content": message.text})
@@ -305,7 +320,8 @@ async def process_message(message: types.Message, state: FSMContext):
             messages=messages,
             answers=answers,
             topics=topics,
-            user_knowledge_level=user_knowledge_level
+            user_knowledge_level=user_knowledge_level,
+            message_counter=message_counter  # Сохраняем счетчик сообщений
         )
         
         # Обновляем информацию об активности пользователя в базе данных

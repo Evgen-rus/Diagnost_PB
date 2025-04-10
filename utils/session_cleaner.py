@@ -32,16 +32,17 @@ async def cleanup_inactive_sessions(storage: MemoryStorage):
     
     cleaner_logger.info(f"Найдено {len(inactive_users)} неактивных пользователей")
     
-    # Очищаем сессии неактивных пользователей
+    # В версии MVP просто выводим информацию о неактивных пользователях, 
+    # но реально не удаляем из хранилища, так как это может вызвать проблемы
+    # и требует более глубокой интеграции с aiogram
     for user_id in inactive_users:
         try:
-            # Для каждого пользователя очищаем его состояние
-            await storage.close_user_state(user_id=user_id)
-            cleaner_logger.info(f"Сессия пользователя {user_id} очищена")
+            cleaner_logger.info(f"Обнаружен неактивный пользователь {user_id}")
+            # В полной версии здесь будет код для безопасной очистки данных конкретного пользователя
         except Exception as e:
-            cleaner_logger.error(f"Ошибка при очистке сессии пользователя {user_id}: {str(e)}")
+            cleaner_logger.error(f"Ошибка при обработке неактивного пользователя {user_id}: {str(e)}")
     
-    cleaner_logger.info(f"Очистка неактивных сессий завершена, обработано {len(inactive_users)} пользователей")
+    cleaner_logger.info(f"Обработка неактивных пользователей завершена, найдено {len(inactive_users)} пользователей")
 
 async def update_user_activity(user_id: int, state: FSMContext):
     """
