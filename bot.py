@@ -13,7 +13,7 @@ from utils.token_counter import token_counter
 from utils.keyboards import create_main_inline_keyboard
 import datetime
 import re  # Добавляем импорт модуля регулярных выражений
-from prompts import INTERVIEWER_PROMPT, INSTRUCTION, WELCOME_MESSAGE, FIRST_QUESTION_PROMPT
+from prompts import INTERVIEWER_PROMPT, INSTRUCTION, WELCOME_MESSAGE, FIRST_QUESTION_PROMPT, RELATED_TOPICS_PROMPT, SUMMARY_PROMPT, DEEPER_TOPIC_PROMPT, UNDERSTANDING_CHECK_PROMPT, MAIN_POINTS_PROMPT
 
 # Количество сообщений пользователя, после которых начинают показываться кнопки
 BUTTONS_APPEAR_AFTER_USER_MESSAGES = 2
@@ -51,111 +51,68 @@ class BotStates(StatesGroup):
 
 # Обработчик команды /start
 @dp.message(Command("start"))
-async def cmd_start(message: types.Message, state: FSMContext):
+async def start_command(message: types.Message, state: FSMContext):
     """
-    Обработчик команды /start. Инициализирует новый диалог с пользователем.
+    Обработчик команды /start.
     
-    Действия:
-    1. Создает контекстный логгер для отслеживания действий пользователя
-    2. Очищает предыдущее состояние и историю диалога
-    3. Инициализирует новый диалог в состоянии INTERVIEWER
-    4. Отправляет приветственное сообщение напрямую из константы
-    5. Запрашивает первый вопрос через GPT
-    6. Отображает индикатор "печатает" во время генерации ответа
+    Инициализирует новый диалог с пользователем, сбрасывает счетчики токенов
+    и устанавливает начальное состояние бота.
     
     Args:
-        message (types.Message): Объект сообщения Telegram с данными пользователя и чата
+        message (types.Message): Объект сообщения Telegram
         state (FSMContext): Контекст состояния для хранения данных диалога
-        
-    Returns:
-        None
-        
-    Raises:
-        openai.APIError: Возникает при проблемах с OpenAI API, таких как ошибки аутентификации,
-                         превышение лимитов запросов или недоступность сервиса
-        aiogram.exceptions.TelegramAPIError: Возникает при проблемах отправки сообщения в Telegram API
-        asyncio.TimeoutError: Возникает при превышении времени ожидания ответа от API
-        Exception: Обработка всех остальных ошибок с логированием и отправкой пользователю 
-                 сообщения об ошибке
-    
-    Note:
-        Команда /start всегда сбрасывает предыдущее состояние диалога и начинает новое интервью.
-        Также сбрасывается счетчик токенов для корректного учета использования API.
-        Первое сообщение отправляется без клавиатуры, так как это приветствие.
     """
-    # Создаем логгер с контекстом пользователя
+    # Создаем контекстный логгер для пользователя
     user_logger = get_user_logger(
-        user_id=message.from_user.id, 
+        user_id=message.from_user.id,
         operation="start_command"
     )
+    user_logger.info(f"Пользователь {message.from_user.full_name} (ID: {message.from_user.id}) запустил бота")
     
-    user_logger.info(f"Пользователь запустил бота командой /start")
-    
-    # Сбрасываем счетчик токенов при запуске нового диалога
-    token_counter.reset_counters()
-    user_logger.info("Счетчик токенов сброшен")
-    
-    # Логируем команду запуска
-    log_user_message(message.from_user.id, "[COMMAND] /start")
-    
-    # Очищаем предыдущую историю диалога
-    await state.clear()
-    
-    # Инициализируем новый диалог
+    # Устанавливаем состояние INTERVIEWER
     await state.set_state(BotStates.INTERVIEWER)
+    
+    # Инициализируем данные сессии
     await state.update_data(
+        messages=[{"role": "system", "content": INTERVIEWER_PROMPT}],
+        token_count=0,
+        cost=0,
         answers={},
-        profile_generated=False
+        # Новые поля для обучающего ассистента
+        topics={
+            "current": "",
+            "history": [],
+            "related_topics": {}
+        },
+        user_knowledge_level={
+            "general": "beginner",
+            "topics": {}
+        }
     )
     
-    # Отправляем приветственное сообщение напрямую из константы
-    await message.answer(
-        WELCOME_MESSAGE, 
-        parse_mode="HTML"
+    # Отправляем приветственное сообщение
+    await message.answer(WELCOME_MESSAGE, parse_mode="HTML")
+    
+    # Запрашиваем у OpenAI первый вопрос на основе начального промпта
+    first_query_response = await get_gpt_response(
+        [{"role": "system", "content": FIRST_QUESTION_PROMPT}],
+        "",
+        user_id=message.from_user.id
     )
     
-    # Логируем ответ бота
-    log_bot_response(message.from_user.id, WELCOME_MESSAGE)
-    
-    # Показываем индикатор набора текста
-    typing_task = asyncio.create_task(keep_typing(message.chat.id))
-    
-    try:
-        user_logger.info("Отправка запроса на первый вопрос")
-        # Отправляем запрос на получение первого вопроса
-        response = await get_gpt_response(
-            [],
-            INTERVIEWER_PROMPT,
-            FIRST_QUESTION_PROMPT,
-            user_id=message.from_user.id
-        )
-        
-        # Сохраняем сообщения в истории
-        await state.update_data(messages=[
+    # Сохраняем ответ GPT в историю сообщений
+    await state.update_data(
+        messages=[
             {"role": "system", "content": INTERVIEWER_PROMPT},
-            {"role": "assistant", "content": WELCOME_MESSAGE},  # Добавляем приветствие в историю
-            {"role": "assistant", "content": response}  # Добавляем первый вопрос в историю
-        ])
-        
-        user_logger.info("Отправка первого вопроса пользователю")
-        
-        # Отправляем сообщение БЕЗ клавиатуры
-        await message.answer(
-            response, 
-            parse_mode="HTML"
-        )
-        
-        # Логируем полный ответ бота
-        log_bot_response(message.from_user.id, response)
-        
-        # Отменяем задачу обновления статуса
-        typing_task.cancel()
-        
-    except Exception as e:
-        # Отменяем задачу обновления статуса в случае ошибки
-        typing_task.cancel()
-        user_logger.error(f"Ошибка при обработке /start: {str(e)}", exc_info=True)
-        await message.answer("Произошла ошибка при запуске бота. Пожалуйста, попробуйте еще раз.", parse_mode="HTML")
+            {"role": "assistant", "content": first_query_response}
+        ]
+    )
+    
+    # Отправляем первый вопрос пользователю
+    await message.answer(first_query_response, parse_mode="HTML")
+    
+    # Логируем отправку первого вопроса
+    log_bot_response(message.from_user.id, first_query_response)
 
 # Функция для поддержания индикатора набора текста
 async def keep_typing(chat_id):
@@ -208,25 +165,14 @@ async def process_message(message: types.Message, state: FSMContext):
     1. Создает контекстный логгер для текущего пользователя и сообщения
     2. Извлекает текущее состояние диалога
     3. Добавляет сообщение пользователя в историю диалога    
-    4. Обновляет состояние диалога
+    4. Анализирует тему вопроса и определяет связанные темы
+    5. Выбирает дополнительный промпт в зависимости от контекста
+    6. Получает ответ от GPT, включая предложения связанных тем
+    7. Обновляет состояние диалога
     
     Args:
         message (types.Message): Объект сообщения Telegram с данными пользователя
         state (FSMContext): Контекст состояния для хранения данных диалога
-        
-    Returns:
-        None
-        
-    Raises:
-        aiogram.exceptions.TelegramAPIError: Возникает при проблемах взаимодействия с Telegram API,
-                                            например, при удалении клавиатуры или отправке сообщения
-        json.JSONDecodeError: Возникает при ошибках парсинга JSON в ответе от GPT
-        openai.APIError: Возникает при проблемах с OpenAI API
-        asyncio.TimeoutError: Возникает при превышении времени ожидания ответа от API
-        Exception: Обработка всех остальных ошибок с логированием
-    
-    Note:
-        Функция использует индикатор "печатает" для улучшения пользовательского опыта.
     """
     # Создаем контекстный логгер для текущего пользователя
     user_logger = get_user_logger(
@@ -262,6 +208,8 @@ async def process_message(message: types.Message, state: FSMContext):
         data = await state.get_data()
         messages = data.get("messages", [])
         answers = data.get("answers", {})
+        topics = data.get("topics", {"current": "", "history": [], "related_topics": {}})
+        user_knowledge_level = data.get("user_knowledge_level", {"general": "beginner", "topics": {}})
         
         # Создаем идентификатор сессии для логирования всех действий в рамках этого запроса
         session_id = f"msg_{int(datetime.datetime.now().timestamp())}"
@@ -275,8 +223,26 @@ async def process_message(message: types.Message, state: FSMContext):
         messages.append({"role": "user", "content": message.text})
         
         # Проверяем, нужно ли показывать кнопки в этом сообщении
-        # Используем функцию should_show_buttons для определения момента появления кнопок
         show_buttons = should_show_buttons(messages)
+        
+        # Анализируем тему вопроса
+        topic_data = await analyze_topic(messages, message.from_user.id)
+        main_topic = topic_data.get("main_topic", "")
+        related_topics = topic_data.get("related_topics", [])
+        
+        # Обновляем информацию о темах
+        if main_topic:
+            if main_topic != topics["current"] and topics["current"]:
+                # Если тема изменилась, добавляем предыдущую в историю
+                topics["history"].append(topics["current"])
+            
+            topics["current"] = main_topic
+            
+            # Сохраняем связанные темы
+            topics["related_topics"][main_topic] = related_topics
+        
+        # Выбираем дополнительный промпт
+        additional_prompt = select_additional_prompt(messages, user_knowledge_level)
         
         # Формируем системный промпт
         system_prompt = INTERVIEWER_PROMPT
@@ -284,16 +250,23 @@ async def process_message(message: types.Message, state: FSMContext):
         # Создаем контекст для передачи в GPT
         context = {
             "answers": answers,
+            "topics": topics,
+            "user_knowledge_level": user_knowledge_level,
             "wait_for_confirmation": data.get("wait_for_confirmation", False)
         }
             
         request_logger.info("Отправка запроса для анализа ответа и генерации ответа")
         
+        # Добавляем инструкцию с дополнительным промптом
+        instruction = INSTRUCTION
+        if additional_prompt:
+            instruction += f"\n\n{additional_prompt}"
+        
         # Получаем ответ от GPT с контекстом
         gpt_response = await get_gpt_response(
             messages,
             system_prompt, 
-            f"Контекст: {json.dumps(context, ensure_ascii=False)}\n\nИнструкция: {INSTRUCTION}",
+            f"Контекст: {json.dumps(context, ensure_ascii=False)}\n\nИнструкция: {instruction}",
             user_id=message.from_user.id
         )
             
@@ -308,6 +281,10 @@ async def process_message(message: types.Message, state: FSMContext):
                 # Обновляем состояние
                 answers = updated_state.get("answers", answers)
                 
+                # Обновляем уровень знаний пользователя, если есть
+                if "user_knowledge_level" in updated_state:
+                    user_knowledge_level = updated_state["user_knowledge_level"]
+                
                 # Очищаем ответ от служебной информации
                 gpt_response = gpt_response.split("```")[0] + gpt_response.split("```")[-1]
                 request_logger.info("Состояние успешно обновлено")
@@ -320,7 +297,9 @@ async def process_message(message: types.Message, state: FSMContext):
         # Обновляем состояние
         await state.update_data(
             messages=messages,
-            answers=answers
+            answers=answers,
+            topics=topics,
+            user_knowledge_level=user_knowledge_level
         )
         
         request_logger.info("Отправка ответа пользователю")
@@ -640,15 +619,16 @@ async def process_new_question_callback(callback: types.CallbackQuery, state: FS
     # Сохраняем текущее состояние, но сбрасываем историю сообщений
     data = await state.get_data()
     
-    # Сбрасываем историю, но сохраняем базовое состояние
+    # Сбрасываем историю, но сохраняем базовое состояние и информацию о темах
     await state.update_data(
         messages=[{"role": "system", "content": INTERVIEWER_PROMPT}],
         answers=data.get("answers", {}),
-        profile_generated=data.get("profile_generated", False)
+        topics=data.get("topics", {"current": "", "history": [], "related_topics": {}}),
+        user_knowledge_level=data.get("user_knowledge_level", {"general": "beginner", "topics": {}})
     )
     
     # Отправляем сообщение о начале нового диалога
-    response = "Контекст беседы сброшен. Вы можете задать новый вопрос по любому направлению неразрушающего контроля."
+    response = "Контекст беседы сброшен. Вы можете задать новый вопрос по любой интересующей вас теме."
     
     sent_message = await callback.message.answer(
         response,
@@ -661,6 +641,107 @@ async def process_new_question_callback(callback: types.CallbackQuery, state: FS
     
     # Логируем ответ бота
     log_bot_response(callback.from_user.id, response)
+
+async def analyze_topic(messages, user_id):
+    """
+    Анализирует тему вопроса пользователя и определяет связанные темы.
+    
+    Args:
+        messages (list): История сообщений диалога
+        user_id (int): ID пользователя для логирования
+        
+    Returns:
+        dict: Словарь с основной темой и связанными темами
+    """
+    # Создаем контекстный логгер
+    topic_logger = get_user_logger(
+        user_id=user_id,
+        operation="analyze_topic"
+    )
+    
+    topic_logger.info("Анализ темы вопроса пользователя")
+    
+    # Определяем последний вопрос пользователя
+    user_messages = [msg for msg in messages if msg["role"] == "user"]
+    if not user_messages:
+        topic_logger.warning("История сообщений не содержит вопросов пользователя")
+        return {"main_topic": "", "related_topics": []}
+    
+    last_user_message = user_messages[-1]["content"]
+    
+    # Запрашиваем у GPT анализ темы и связанных тем
+    try:
+        response = await get_gpt_response(
+            [{"role": "system", "content": RELATED_TOPICS_PROMPT},
+             {"role": "user", "content": last_user_message}],
+            "",
+            user_id=user_id
+        )
+        
+        # Извлекаем JSON с темами
+        topic_data = {}
+        try:
+            # Ищем JSON в ответе
+            import re
+            import json
+            
+            # Паттерн для поиска JSON-объекта в тексте
+            json_match = re.search(r'({[\s\S]*})', response)
+            if json_match:
+                json_str = json_match.group(1)
+                topic_data = json.loads(json_str)
+                topic_logger.info(f"Определена основная тема: {topic_data.get('main_topic')}")
+            else:
+                topic_logger.warning("JSON с темами не найден в ответе")
+                topic_data = {"main_topic": "", "related_topics": []}
+        except Exception as e:
+            topic_logger.error(f"Ошибка при извлечении тем из ответа: {str(e)}")
+            topic_data = {"main_topic": "", "related_topics": []}
+            
+        return topic_data
+        
+    except Exception as e:
+        topic_logger.error(f"Ошибка при анализе темы: {str(e)}")
+        return {"main_topic": "", "related_topics": []}
+
+def select_additional_prompt(messages, user_knowledge_level):
+    """
+    Выбирает дополнительный промпт на основе контекста диалога.
+    
+    Args:
+        messages (list): История сообщений диалога
+        user_knowledge_level (dict): Уровень знаний пользователя
+        
+    Returns:
+        str: Выбранный дополнительный промпт или пустая строка
+    """
+    # Если сообщений мало, не используем дополнительные промпты
+    if len(messages) < 2:
+        return ""
+    
+    # Определяем количество сообщений пользователя
+    user_messages = [msg for msg in messages if msg["role"] == "user"]
+    
+    # При первых нескольких сообщениях часто предлагаем главные тезисы
+    # для помощи пользователю в структурировании знаний
+    if 1 <= len(user_messages) <= 3:
+        return MAIN_POINTS_PROMPT
+    
+    # Если это серия вопросов по одной теме (4 и более), предлагаем резюме
+    elif len(user_messages) >= 4:
+        return SUMMARY_PROMPT
+    
+    # Если у пользователя продвинутый уровень по теме, предлагаем углубление
+    # Уровень знаний определяется по контексту предыдущих сообщений
+    general_level = user_knowledge_level.get("general", "beginner")
+    if general_level in ["intermediate", "advanced"]:
+        return DEEPER_TOPIC_PROMPT
+    
+    # По умолчанию чередуем проверку понимания и предложение тезисов
+    if len(user_messages) % 2 == 0:
+        return UNDERSTANDING_CHECK_PROMPT
+    else:
+        return MAIN_POINTS_PROMPT
 
 if __name__ == "__main__":
     asyncio.run(main()) 
