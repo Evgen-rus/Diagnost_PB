@@ -26,16 +26,14 @@ def create_main_inline_keyboard() -> InlineKeyboardMarkup:
         
         builder = InlineKeyboardBuilder()
         
-        # Добавляем кнопки в клавиатуру
+        # Добавляем кнопки в первый ряд
         builder.row(
-            InlineKeyboardButton(text="Дай пример", callback_data="give_example"),
             InlineKeyboardButton(text="Объясни", callback_data="explain")
         )
         
-        # Добавляем новые кнопки
+        # Добавляем кнопку "Новый вопрос" во второй ряд
         builder.row(
-            InlineKeyboardButton(text="Да", callback_data="answer_yes"),
-            InlineKeyboardButton(text="Нет", callback_data="answer_no")
+            InlineKeyboardButton(text="Новый вопрос", callback_data="new_question")
         )
         
         keyboard_logger.info("Inline-клавиатура успешно создана")

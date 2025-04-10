@@ -13,7 +13,7 @@ from utils.token_counter import token_counter
 from utils.keyboards import create_main_inline_keyboard
 import datetime
 import re  # Добавляем импорт модуля регулярных выражений
-from prompts import INTERVIEWER_PROMPT, QUESTIONS_FOR_UNPACKING, INSTRUCTION, WELCOME_MESSAGE, FIRST_QUESTION_PROMPT
+from prompts import INTERVIEWER_PROMPT, INSTRUCTION, WELCOME_MESSAGE, FIRST_QUESTION_PROMPT
 
 # Количество сообщений пользователя, после которых начинают показываться кнопки
 BUTTONS_APPEAR_AFTER_USER_MESSAGES = 2
@@ -104,7 +104,6 @@ async def cmd_start(message: types.Message, state: FSMContext):
     # Инициализируем новый диалог
     await state.set_state(BotStates.INTERVIEWER)
     await state.update_data(
-        questions=QUESTIONS_FOR_UNPACKING,
         answers={},
         profile_generated=False
     )
@@ -202,12 +201,12 @@ async def process_message(message: types.Message, state: FSMContext):
     """
     Основной обработчик всех сообщений пользователя в состоянии INTERVIEWER.
     
-    Этот обработчик принимает все сообщения пользователя во время интервью,
+    Этот обработчик принимает все сообщения пользователя,
     анализирует их и формирует ответы с помощью OpenAI API.
     
     Действия:
     1. Создает контекстный логгер для текущего пользователя и сообщения
-    2. Извлекает текущее состояние диалога (вопросы, ответы)
+    2. Извлекает текущее состояние диалога
     3. Добавляет сообщение пользователя в историю диалога    
     4. Обновляет состояние диалога
     
@@ -227,9 +226,7 @@ async def process_message(message: types.Message, state: FSMContext):
         Exception: Обработка всех остальных ошибок с логированием
     
     Note:
-        Функция использует индикатор "печатает" для улучшения пользовательского опыта.        
-        При парсинге ответов от GPT используется поиск блоков JSON для извлечения 
-        обновленного состояния диалога.
+        Функция использует индикатор "печатает" для улучшения пользовательского опыта.
     """
     # Создаем контекстный логгер для текущего пользователя
     user_logger = get_user_logger(
@@ -264,7 +261,6 @@ async def process_message(message: types.Message, state: FSMContext):
         # Получаем текущее состояние диалога
         data = await state.get_data()
         messages = data.get("messages", [])
-        questions = data.get("questions", QUESTIONS_FOR_UNPACKING)
         answers = data.get("answers", {})
         
         # Создаем идентификатор сессии для логирования всех действий в рамках этого запроса
@@ -285,20 +281,13 @@ async def process_message(message: types.Message, state: FSMContext):
         # Формируем системный промпт
         system_prompt = INTERVIEWER_PROMPT
         
-        # Собираем информацию о прогрессе 
-        total_questions = sum(len(category) for category in questions.values())
-        asked_questions = sum(question["задан"] for category in questions.values() for question in category)
-        progress = f"Прогресс: {asked_questions}/{total_questions} вопросов"
-        
-        # Создаем JSON с текущими вопросами и ответами для передачи в GPT
+        # Создаем контекст для передачи в GPT
         context = {
-            "questions": questions,
             "answers": answers,
-            "progress": progress,
             "wait_for_confirmation": data.get("wait_for_confirmation", False)
         }
             
-        request_logger.info("Отправка запроса для анализа ответа и выбора следующего вопроса")
+        request_logger.info("Отправка запроса для анализа ответа и генерации ответа")
         
         # Получаем ответ от GPT с контекстом
         gpt_response = await get_gpt_response(
@@ -317,7 +306,6 @@ async def process_message(message: types.Message, state: FSMContext):
                 updated_state = json.loads(json_str)
                 
                 # Обновляем состояние
-                questions = updated_state.get("questions", questions)
                 answers = updated_state.get("answers", answers)
                 
                 # Очищаем ответ от служебной информации
@@ -332,7 +320,6 @@ async def process_message(message: types.Message, state: FSMContext):
         # Обновляем состояние
         await state.update_data(
             messages=messages,
-            questions=questions,
             answers=answers
         )
         
@@ -576,7 +563,7 @@ async def process_main_keyboard_callback(callback: types.CallbackQuery, state: F
     await callback.answer()
     await callback.message.edit_reply_markup(reply_markup=None)
     # Получаем текст команды
-    text = "Дай пример" if callback.data == "give_example" else "Объясни"
+    text = "Объясни"
     
     # Логируем команду как обычное сообщение
     log_user_message(callback.from_user.id, text)
@@ -624,57 +611,56 @@ async def process_main_keyboard_callback(callback: types.CallbackQuery, state: F
         logger.error(f"Ошибка при обработке callback-запроса: {str(e)}", exc_info=True)
         await callback.message.answer("Произошла ошибка при обработке запроса. Пожалуйста, попробуйте еще раз.", parse_mode="HTML")
 
-@dp.callback_query(lambda c: c.data in ["answer_yes", "answer_no"])
-async def process_yes_no_callback(callback: types.CallbackQuery, state: FSMContext):
+@dp.callback_query(lambda c: c.data == "new_question")
+async def process_new_question_callback(callback: types.CallbackQuery, state: FSMContext):
+    """
+    Обработчик нажатия на кнопку "Новый вопрос".
+    
+    Действия:
+    1. Сбрасывает контекст беседы (историю сообщений)
+    2. Сохраняет базовое состояние бота
+    3. Отправляет сообщение о начале нового диалога
+    
+    Args:
+        callback (types.CallbackQuery): Объект callback-запроса
+        state (FSMContext): Контекст состояния бота
+    """
+    await callback.answer("Начинаем новый вопрос")
     await callback.message.edit_reply_markup(reply_markup=None)
-    # Получаем текст ответа
-    text = "да" if callback.data == "answer_yes" else "нет"
     
-    # Логируем команду как обычное сообщение
-    log_user_message(callback.from_user.id, text)
+    # Логируем действие
+    log_user_message(callback.from_user.id, "[ACTION] Новый вопрос")
     
-    # Обрабатываем команду напрямую как сообщение пользователя
+    user_logger = get_user_logger(
+        user_id=callback.from_user.id,
+        operation="new_question"
+    )
+    user_logger.info("Пользователь запросил сброс контекста беседы")
+    
+    # Сохраняем текущее состояние, но сбрасываем историю сообщений
     data = await state.get_data()
-    messages = data.get("messages", [])
-    messages.append({"role": "user", "content": text})
     
-    # Показываем индикатор набора текста
-    typing_task = asyncio.create_task(keep_typing(callback.message.chat.id))
+    # Сбрасываем историю, но сохраняем базовое состояние
+    await state.update_data(
+        messages=[{"role": "system", "content": INTERVIEWER_PROMPT}],
+        answers=data.get("answers", {}),
+        profile_generated=data.get("profile_generated", False)
+    )
     
-    try:
-        # Получаем ответ от модели
-        response = await get_gpt_response(
-            messages,
-            INTERVIEWER_PROMPT,
-            user_id=callback.from_user.id
-        )
-        
-        # Сохраняем ответ
-        messages.append({"role": "assistant", "content": response})
-        await state.update_data(messages=messages)
-        
-        # Проверяем, нужно ли показывать кнопки
-        show_buttons = should_show_buttons(messages)
-        
-        # Отправляем ответ
-        sent_message = await callback.message.answer(
-            response, 
-            parse_mode="HTML", 
-            reply_markup=create_main_inline_keyboard() if show_buttons else None
-        )
-        await state.update_data(last_bot_message_id=sent_message.message_id)
-        
-        # Логируем ответ
-        log_bot_response(callback.from_user.id, response)
-        
-        # Отменяем задачу обновления статуса
-        typing_task.cancel()
-        
-    except Exception as e:
-        # Отменяем задачу обновления статуса в случае ошибки
-        typing_task.cancel()
-        logger.error(f"Ошибка при обработке callback-запроса: {str(e)}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при обработке запроса. Пожалуйста, попробуйте еще раз.", parse_mode="HTML")
+    # Отправляем сообщение о начале нового диалога
+    response = "Контекст беседы сброшен. Вы можете задать новый вопрос по любому направлению неразрушающего контроля."
+    
+    sent_message = await callback.message.answer(
+        response,
+        parse_mode="HTML",
+        reply_markup=create_main_inline_keyboard()
+    )
+    
+    # Сохраняем ID сообщения для последующего удаления клавиатуры
+    await state.update_data(last_bot_message_id=sent_message.message_id)
+    
+    # Логируем ответ бота
+    log_bot_response(callback.from_user.id, response)
 
 if __name__ == "__main__":
     asyncio.run(main()) 
