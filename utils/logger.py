@@ -4,6 +4,7 @@ from logging.handlers import TimedRotatingFileHandler
 from typing import Dict, Any, Optional  # Добавляем импорт типов для аннотаций
 import datetime
 import re  # Добавляем импорт для работы с регулярными выражениями
+from utils.database import log_message
 
 class ContextAdapter(logging.LoggerAdapter):
     """
@@ -220,7 +221,7 @@ def log_user_message(user_id: int, message_text: str) -> None:
     
     Функция записывает сообщение пользователя в специальный лог-файл диалогов,
     предварительно очищая его от HTML-тегов для лучшей читаемости.
-    Запись происходит только если уровень логирования установлен на INFO или ниже.
+    Также сохраняет сообщение в базу данных SQLite.
     
     Args:
         user_id (int): ID пользователя в Telegram
@@ -239,6 +240,12 @@ def log_user_message(user_id: int, message_text: str) -> None:
     # Сохраняем сообщение в логи только если уровень логгера INFO или ниже
     if dialog_logger.isEnabledFor(logging.INFO):
         dialog_logger.info(f"[USER {user_id}] {clean_message}")
+    
+    # Сохраняем в базу данных
+    try:
+        log_message(user_id=user_id, message_type='user', message_text=clean_message)
+    except Exception as e:
+        logger.error(f"Ошибка при сохранении сообщения пользователя в базу данных: {str(e)}")
 
 def log_bot_response(user_id: int, response_text: str) -> None:
     """
@@ -246,10 +253,10 @@ def log_bot_response(user_id: int, response_text: str) -> None:
     
     Функция записывает ответ бота в специальный лог-файл диалогов,
     предварительно очищая его от HTML-тегов для лучшей читаемости.
-    Запись происходит только если уровень логирования установлен на INFO или ниже.
+    Также сохраняет ответ в базу данных SQLite.
     
     Args:
-        user_id (int): ID пользователя, которому был отправлен ответ
+        user_id (int): ID пользователя в Telegram
         response_text (str): Полный текст ответа бота
         
     Returns:
@@ -264,4 +271,10 @@ def log_bot_response(user_id: int, response_text: str) -> None:
     
     # Сохраняем ответ в логи только если уровень логгера INFO или ниже
     if dialog_logger.isEnabledFor(logging.INFO):
-        dialog_logger.info(f"[BOT to {user_id}] {clean_response}") 
+        dialog_logger.info(f"[BOT TO {user_id}] {clean_response}")
+    
+    # Сохраняем в базу данных
+    try:
+        log_message(user_id=user_id, message_type='bot', message_text=clean_response)
+    except Exception as e:
+        logger.error(f"Ошибка при сохранении ответа бота в базу данных: {str(e)}") 

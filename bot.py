@@ -1,6 +1,6 @@
 import asyncio
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -11,6 +11,8 @@ from openai import AsyncOpenAI
 from utils.logger import logger, get_user_logger, log_user_message, log_bot_response
 from utils.token_counter import token_counter
 from utils.keyboards import create_main_inline_keyboard
+from utils.database import init_database, log_message
+from utils.session_cleaner import update_user_activity, start_cleaner
 import datetime
 import re  # Добавляем импорт модуля регулярных выражений
 from prompts import INTERVIEWER_PROMPT, INSTRUCTION, WELCOME_MESSAGE, FIRST_QUESTION_PROMPT, RELATED_TOPICS_PROMPT, SUMMARY_PROMPT, DEEPER_TOPIC_PROMPT, UNDERSTANDING_CHECK_PROMPT, MAIN_POINTS_PROMPT
@@ -50,7 +52,7 @@ class BotStates(StatesGroup):
     INTERVIEWER = State()  # Состояние работы первого агента (Интервьюер)
 
 # Обработчик команды /start
-@dp.message(Command("start"))
+@dp.message(CommandStart())
 async def start_command(message: types.Message, state: FSMContext):
     """
     Обработчик команды /start.
@@ -64,7 +66,7 @@ async def start_command(message: types.Message, state: FSMContext):
     """
     # Создаем контекстный логгер для пользователя
     user_logger = get_user_logger(
-        user_id=message.from_user.id,
+        user_id=message.from_user.id, 
         operation="start_command"
     )
     user_logger.info(f"Пользователь {message.from_user.full_name} (ID: {message.from_user.id}) запустил бота")
@@ -89,6 +91,9 @@ async def start_command(message: types.Message, state: FSMContext):
             "topics": {}
         }
     )
+    
+    # Обновляем информацию об активности пользователя в базе данных
+    await update_user_activity(user_id=message.from_user.id, state=state)
     
     # Отправляем приветственное сообщение
     await message.answer(WELCOME_MESSAGE, parse_mode="HTML")
@@ -169,6 +174,7 @@ async def process_message(message: types.Message, state: FSMContext):
     5. Выбирает дополнительный промпт в зависимости от контекста
     6. Получает ответ от GPT, включая предложения связанных тем
     7. Обновляет состояние диалога
+    8. Обновляет информацию об активности пользователя в базе данных
     
     Args:
         message (types.Message): Объект сообщения Telegram с данными пользователя
@@ -301,6 +307,9 @@ async def process_message(message: types.Message, state: FSMContext):
             topics=topics,
             user_knowledge_level=user_knowledge_level
         )
+        
+        # Обновляем информацию об активности пользователя в базе данных
+        await update_user_activity(user_id=message.from_user.id, state=state)
         
         request_logger.info("Отправка ответа пользователю")
 
@@ -513,8 +522,10 @@ async def main():
     
     Действия:
     1. Инициализирует общий логгер для отслеживания старта бота
-    2. Устанавливает команды меню бота в интерфейсе Telegram
-    3. Запускает поллинг для обработки сообщений
+    2. Инициализирует базу данных SQLite для логирования
+    3. Запускает процесс очистки неактивных сессий
+    4. Устанавливает команды меню бота в интерфейсе Telegram
+    5. Запускает поллинг для обработки сообщений
     
     Args:
         Нет аргументов
@@ -527,6 +538,20 @@ async def main():
     """
     # Создаем общий логгер без контекста пользователя
     logger.info("Starting bot...")
+    
+    # Инициализируем базу данных SQLite
+    try:
+        init_database()
+        logger.info("База данных SQLite инициализирована")
+    except Exception as e:
+        logger.error(f"Ошибка при инициализации базы данных: {str(e)}")
+    
+    # Запускаем процесс очистки неактивных сессий в фоновом режиме
+    try:
+        asyncio.create_task(start_cleaner(storage, interval_seconds=300))  # Проверка каждые 5 минут
+        logger.info("Запущен процесс очистки неактивных сессий")
+    except Exception as e:
+        logger.error(f"Ошибка при запуске очистки сессий: {str(e)}")
     
     # Устанавливаем команды меню бота
     await bot.set_my_commands([
@@ -567,6 +592,9 @@ async def process_main_keyboard_callback(callback: types.CallbackQuery, state: F
         messages.append({"role": "assistant", "content": response})
         await state.update_data(messages=messages)
         
+        # Обновляем информацию об активности пользователя в базе данных
+        await update_user_activity(user_id=callback.from_user.id, state=state)
+        
         # Проверяем, нужно ли показывать кнопки
         show_buttons = should_show_buttons(messages)
         
@@ -599,6 +627,7 @@ async def process_new_question_callback(callback: types.CallbackQuery, state: FS
     1. Сбрасывает контекст беседы (историю сообщений)
     2. Сохраняет базовое состояние бота
     3. Отправляет сообщение о начале нового диалога
+    4. Обновляет информацию об активности пользователя в базе данных
     
     Args:
         callback (types.CallbackQuery): Объект callback-запроса
@@ -626,6 +655,9 @@ async def process_new_question_callback(callback: types.CallbackQuery, state: FS
         topics=data.get("topics", {"current": "", "history": [], "related_topics": {}}),
         user_knowledge_level=data.get("user_knowledge_level", {"general": "beginner", "topics": {}})
     )
+    
+    # Обновляем информацию об активности пользователя в базе данных
+    await update_user_activity(user_id=callback.from_user.id, state=state)
     
     # Отправляем сообщение о начале нового диалога
     response = "Контекст беседы сброшен. Вы можете задать новый вопрос по любой интересующей вас теме."
