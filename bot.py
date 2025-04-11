@@ -15,7 +15,7 @@ from utils.database import init_database, log_message
 from utils.session_cleaner import update_user_activity, start_cleaner
 import datetime
 import re  # Добавляем импорт модуля регулярных выражений
-from prompts import LEARNING_ASSISTANT_PROMPT, INSTRUCTION, WELCOME_MESSAGE, FIRST_QUESTION_PROMPT, RELATED_TOPICS_PROMPT, SUMMARY_PROMPT, DEEPER_TOPIC_PROMPT, UNDERSTANDING_CHECK_PROMPT, MAIN_POINTS_PROMPT
+from prompts import LEARNING_ASSISTANT_PROMPT, INSTRUCTION, WELCOME_MESSAGE, FIRST_QUESTION_PROMPT, RELATED_TOPICS_PROMPT, SUMMARY_PROMPT, DEEPER_TOPIC_PROMPT, UNDERSTANDING_CHECK_PROMPT, MAIN_POINTS_PROMPT, SUMMARY_GENERATION_PROMPT
 
 # Количество сообщений пользователя, после которых начинают показываться кнопки
 BUTTONS_APPEAR_AFTER_USER_MESSAGES = 2
@@ -89,7 +89,9 @@ async def start_command(message: types.Message, state: FSMContext):
         user_knowledge_level={
             "general": "beginner",
             "topics": {}
-        }
+        },
+        # Инициализируем счетчик сообщений
+        message_counter=0
     )
     
     # Обновляем информацию об активности пользователя в базе данных
@@ -175,7 +177,8 @@ async def process_message(message: types.Message, state: FSMContext):
     6. Получает ответ от GPT, включая предложения связанных тем
     7. Обновляет состояние диалога
     8. Обновляет информацию об активности пользователя в базе данных
-    9. Автоматически сбрасывает контекст после 3 вопросов пользователя
+    9. Автоматически резюмирует и сбрасывает контекст после 3 вопросов пользователя,
+       сохраняя при этом краткое содержание предыдущего диалога для сохранения контекста
     
     Args:
         message (types.Message): Объект сообщения Telegram с данными пользователя
@@ -234,8 +237,17 @@ async def process_message(message: types.Message, state: FSMContext):
         if message_counter > 0 and message_counter % 3 == 0:
             request_logger.info(f"Автоматический сброс контекста после {message_counter} вопросов")
             
-            # Сохраняем только системное сообщение, сбрасывая историю диалога
+            # Генерируем резюме диалога перед сбросом контекста
+            dialog_summary = await generate_dialog_summary(messages, message.from_user.id)
+            request_logger.info("Создано резюме диалога для сохранения контекста")
+            
+            # Сохраняем только системное сообщение и резюме, сбрасывая историю диалога
             messages = [{"role": "system", "content": LEARNING_ASSISTANT_PROMPT}]
+            
+            # Если удалось создать резюме, добавляем его как системное сообщение
+            if dialog_summary:
+                messages.append({"role": "system", "content": f"Предыдущий контекст диалога: {dialog_summary}"})
+                request_logger.info(f"Добавлено резюме диалога размером {len(dialog_summary)} символов")
             
             # Сбрасываем счетчик сообщений
             message_counter = 0
@@ -669,7 +681,8 @@ async def process_new_question_callback(callback: types.CallbackQuery, state: FS
         messages=[{"role": "system", "content": LEARNING_ASSISTANT_PROMPT}],
         answers=data.get("answers", {}),
         topics=data.get("topics", {"current": "", "history": [], "related_topics": {}}),
-        user_knowledge_level=data.get("user_knowledge_level", {"general": "beginner", "topics": {}})
+        user_knowledge_level=data.get("user_knowledge_level", {"general": "beginner", "topics": {}}),
+        message_counter=0  # Сбрасываем счетчик сообщений
     )
     
     # Обновляем информацию об активности пользователя в базе данных
@@ -689,6 +702,60 @@ async def process_new_question_callback(callback: types.CallbackQuery, state: FS
     
     # Логируем ответ бота
     log_bot_response(callback.from_user.id, response)
+
+async def generate_dialog_summary(messages, user_id):
+    """
+    Создает краткое резюме предыдущего диалога для сохранения контекста при уменьшении токенов.
+    
+    Функция отправляет запрос к модели GPT для создания компактного резюме диалога,
+    которое сохраняет ключевую информацию и контекст, но занимает меньше токенов,
+    чем полная история сообщений.
+    
+    Действия:
+    1. Создает контекстный логгер для операции резюмирования
+    2. Отправляет запрос к GPT с историей сообщений и специальным промптом
+    3. Получает и возвращает сгенерированное резюме
+    
+    Args:
+        messages (list): История сообщений диалога для резюмирования
+        user_id (int): ID пользователя для логирования
+        
+    Returns:
+        str: Краткое резюме диалога, содержащее ключевую информацию
+        
+    Raises:
+        Exception: Обрабатывается внутри функции, в случае ошибки возвращается
+                   пустое резюме и информация логируется
+    """
+    # Создаем контекстный логгер
+    summary_logger = get_user_logger(
+        user_id=user_id,
+        operation="dialog_summary"
+    )
+    
+    summary_logger.info("Создание резюме диалога из истории сообщений")
+    
+    # Проверяем, достаточно ли сообщений для резюмирования
+    if len(messages) < 3:
+        summary_logger.info("Недостаточно сообщений для резюмирования")
+        return ""
+    
+    try:
+        # Отправляем запрос к GPT для создания резюме
+        response = await get_gpt_response(
+            # Отправляем историю сообщений для анализа, но без системного промпта
+            [msg for msg in messages if msg["role"] != "system"],
+            # Используем специальный промпт для генерации резюме
+            SUMMARY_GENERATION_PROMPT,
+            user_id=user_id
+        )
+        
+        summary_logger.info("Резюме диалога успешно создано")
+        return response
+        
+    except Exception as e:
+        summary_logger.error(f"Ошибка при создании резюме диалога: {str(e)}", exc_info=True)
+        return ""
 
 async def analyze_topic(messages, user_id):
     """
