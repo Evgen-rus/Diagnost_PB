@@ -64,3 +64,6 @@ data/*
 
 # Keep the data folder itself
 !data/.gitkeep
+
+# Cursor folder
+.cursor/
