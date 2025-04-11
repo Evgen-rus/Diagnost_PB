@@ -15,7 +15,7 @@ from utils.database import init_database, log_message
 from utils.session_cleaner import update_user_activity, start_cleaner
 import datetime
 import re  # Добавляем импорт модуля регулярных выражений
-from prompts import INTERVIEWER_PROMPT, INSTRUCTION, WELCOME_MESSAGE, FIRST_QUESTION_PROMPT, RELATED_TOPICS_PROMPT, SUMMARY_PROMPT, DEEPER_TOPIC_PROMPT, UNDERSTANDING_CHECK_PROMPT, MAIN_POINTS_PROMPT
+from prompts import LEARNING_ASSISTANT_PROMPT, INSTRUCTION, WELCOME_MESSAGE, FIRST_QUESTION_PROMPT, RELATED_TOPICS_PROMPT, SUMMARY_PROMPT, DEEPER_TOPIC_PROMPT, UNDERSTANDING_CHECK_PROMPT, MAIN_POINTS_PROMPT
 
 # Количество сообщений пользователя, после которых начинают показываться кнопки
 BUTTONS_APPEAR_AFTER_USER_MESSAGES = 2
@@ -39,17 +39,17 @@ class BotStates(StatesGroup):
     
     Эта группа состояний используется для отслеживания этапов диалога 
     между пользователем и ботом. В текущей реализации используется только
-    одно состояние (INTERVIEWER) для проведения всего интервью.
+    одно состояние (LEARNING_ASSISTANT) для проведения всего интервью.
     
     Attributes:
-        INTERVIEWER (State): Состояние работы HR-интервьюера. В этом состоянии
+        LEARNING_ASSISTANT (State): Состояние работы помощника в обучении. В этом состоянии
                            бот собирает информацию для создания профиля кандидата.
     
     Note:
         Для расширения функциональности бота можно добавить дополнительные состояния.
         Например, для редактирования профиля или других режимов работы.
     """
-    INTERVIEWER = State()  # Состояние работы первого агента (Интервьюер)
+    LEARNING_ASSISTANT = State()  # Состояние работы первого и пока единственного агента (помощник в обучении)
 
 # Обработчик команды /start
 @dp.message(CommandStart())
@@ -71,12 +71,12 @@ async def start_command(message: types.Message, state: FSMContext):
     )
     user_logger.info(f"Пользователь {message.from_user.full_name} (ID: {message.from_user.id}) запустил бота")
     
-    # Устанавливаем состояние INTERVIEWER
-    await state.set_state(BotStates.INTERVIEWER)
+    # Устанавливаем состояние LEARNING_ASSISTANT
+    await state.set_state(BotStates.LEARNING_ASSISTANT)
     
     # Инициализируем данные сессии
     await state.update_data(
-        messages=[{"role": "system", "content": INTERVIEWER_PROMPT}],
+        messages=[{"role": "system", "content": LEARNING_ASSISTANT_PROMPT}],
         token_count=0,
         cost=0,
         answers={},
@@ -108,7 +108,7 @@ async def start_command(message: types.Message, state: FSMContext):
     # Сохраняем ответ GPT в историю сообщений
     await state.update_data(
         messages=[
-            {"role": "system", "content": INTERVIEWER_PROMPT},
+            {"role": "system", "content": LEARNING_ASSISTANT_PROMPT},
             {"role": "assistant", "content": first_query_response}
         ]
     )
@@ -158,10 +158,10 @@ async def keep_typing(chat_id):
         pass
 
 # Обработчик всех сообщений
-@dp.message(BotStates.INTERVIEWER)
+@dp.message(BotStates.LEARNING_ASSISTANT)
 async def process_message(message: types.Message, state: FSMContext):
     """
-    Основной обработчик всех сообщений пользователя в состоянии INTERVIEWER.
+    Основной обработчик всех сообщений пользователя в состоянии LEARNING_ASSISTANT.
     
     Этот обработчик принимает все сообщения пользователя,
     анализирует их и формирует ответы с помощью OpenAI API.
@@ -235,7 +235,7 @@ async def process_message(message: types.Message, state: FSMContext):
             request_logger.info(f"Автоматический сброс контекста после {message_counter} вопросов")
             
             # Сохраняем только системное сообщение, сбрасывая историю диалога
-            messages = [{"role": "system", "content": INTERVIEWER_PROMPT}]
+            messages = [{"role": "system", "content": LEARNING_ASSISTANT_PROMPT}]
             
             # Сбрасываем счетчик сообщений
             message_counter = 0
@@ -266,7 +266,7 @@ async def process_message(message: types.Message, state: FSMContext):
         additional_prompt = select_additional_prompt(messages, user_knowledge_level)
         
         # Формируем системный промпт
-        system_prompt = INTERVIEWER_PROMPT
+        system_prompt = LEARNING_ASSISTANT_PROMPT
         
         # Создаем контекст для передачи в GPT
         context = {
@@ -600,7 +600,7 @@ async def process_main_keyboard_callback(callback: types.CallbackQuery, state: F
         # Получаем ответ от модели
         response = await get_gpt_response(
             messages,
-            INTERVIEWER_PROMPT,
+            LEARNING_ASSISTANT_PROMPT,
             user_id=callback.from_user.id
         )
         
@@ -666,7 +666,7 @@ async def process_new_question_callback(callback: types.CallbackQuery, state: FS
     
     # Сбрасываем историю, но сохраняем базовое состояние и информацию о темах
     await state.update_data(
-        messages=[{"role": "system", "content": INTERVIEWER_PROMPT}],
+        messages=[{"role": "system", "content": LEARNING_ASSISTANT_PROMPT}],
         answers=data.get("answers", {}),
         topics=data.get("topics", {"current": "", "history": [], "related_topics": {}}),
         user_knowledge_level=data.get("user_knowledge_level", {"general": "beginner", "topics": {}})

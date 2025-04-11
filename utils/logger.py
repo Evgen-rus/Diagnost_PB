@@ -95,7 +95,7 @@ def setup_logging() -> logging.Logger:
     )
     
     # Создаем логгер для нашего приложения
-    logger = logging.getLogger('neuro_hr_bot')
+    logger = logging.getLogger('learning_assistant')
     logger.setLevel(getattr(logging, log_level))
     
     # Создаем обработчик для вывода в консоль
