@@ -10,7 +10,7 @@ import json
 from openai import AsyncOpenAI
 from utils.logger import logger, get_user_logger, log_user_message, log_bot_response
 from utils.token_counter import token_counter
-from utils.keyboards import create_main_inline_keyboard
+from utils.keyboards import create_main_inline_keyboard, create_level_selection_keyboard
 from utils.database import init_database, log_message
 from utils.session_cleaner import update_user_activity, start_cleaner
 import datetime
@@ -295,6 +295,16 @@ async def process_message(message: types.Message, state: FSMContext):
         if additional_prompt:
             instruction += f"\n\n{additional_prompt}"
         
+        # Добавляем информацию об уровне специалиста
+        level_descriptions = {
+            "beginner": "Технический специалист (Уровень 1): Базовый уровень знаний, работа под руководством, выполнение стандартных процедур.",
+            "intermediate": "Квалифицированный специалист (Уровень 2): Самостоятельное проведение контроля, интерпретация результатов, соответствие стандартам.",
+            "advanced": "Экспертный специалист (Уровень 3): Глубокое понимание методик, разработка процедур контроля, сертификация и обучение."
+        }
+        
+        level_info = f"Уровень пользователя: {level_descriptions.get(user_knowledge_level['general'], 'Не определен')}"
+        instruction += f"\n\nВАЖНО: {level_info}\nАдаптируй сложность и детализацию ответа в соответствии с уровнем пользователя."
+        
         # Получаем ответ от GPT с контекстом
         gpt_response = await get_gpt_response(
             messages,
@@ -428,7 +438,7 @@ async def get_gpt_response(messages, system_content, additional_system_content=N
         response = await client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=api_messages,
-            temperature=0.5,
+            temperature=0.3,
             max_tokens=2000
         )
         
@@ -702,6 +712,152 @@ async def process_new_question_callback(callback: types.CallbackQuery, state: FS
     
     # Логируем ответ бота
     log_bot_response(callback.from_user.id, response)
+
+@dp.callback_query(lambda c: c.data == "select_level")
+async def process_select_level_callback(callback: types.CallbackQuery, state: FSMContext):
+    """
+    Обработчик нажатия на кнопку "Выбрать уровень специалиста".
+    
+    Действия:
+    1. Отображает клавиатуру с выбором уровня специалиста в области НК
+    2. Логирует действие пользователя
+    
+    Args:
+        callback (types.CallbackQuery): Объект callback-запроса
+        state (FSMContext): Контекст состояния бота
+    """
+    await callback.answer("Выберите ваш уровень квалификации в НК")
+    
+    # Логируем действие
+    log_user_message(callback.from_user.id, "[ACTION] Запрос выбора уровня специалиста")
+    
+    user_logger = get_user_logger(
+        user_id=callback.from_user.id,
+        operation="select_level"
+    )
+    user_logger.info("Пользователь запросил выбор уровня специалиста")
+    
+    # Отправляем сообщение с описанием уровней и клавиатурой выбора
+    message_text = """<b>Выберите ваш уровень квалификации в неразрушающем контроле:</b>
+
+<b>Уровень 1 (Технический)</b>
+Специалисты, которые выполняют контроль под руководством более опытных коллег. Могут использовать оборудование и следовать установленным процедурам.
+
+<b>Уровень 2 (Квалифицированный)</b>
+Специалисты, которые самостоятельно проводят контроль, интерпретируют результаты и обеспечивают соответствие стандартам. Могут обучать других.
+
+<b>Уровень 3 (Экспертный)</b>
+Специалисты с глубокими знаниями в области НК. Разрабатывают методики контроля, проводят анализ результатов, участвуют в разработке стандартов.
+
+Я адаптирую свои ответы в соответствии с выбранным уровнем.
+"""
+    
+    # Отправляем сообщение с кнопками выбора уровня
+    sent_message = await callback.message.answer(
+        message_text,
+        parse_mode="HTML",
+        reply_markup=create_level_selection_keyboard()
+    )
+    
+    # Сохраняем ID сообщения для последующего удаления клавиатуры
+    await state.update_data(last_bot_message_id=sent_message.message_id)
+    
+    # Скрываем кнопки предыдущего сообщения
+    await callback.message.edit_reply_markup(reply_markup=None)
+
+@dp.callback_query(lambda c: c.data in ["level_1", "level_2", "level_3"])
+async def process_level_selection_callback(callback: types.CallbackQuery, state: FSMContext):
+    """
+    Обработчик выбора уровня специалиста.
+    
+    Действия:
+    1. Обновляет информацию о выбранном уровне специалиста в состоянии диалога
+    2. Адаптирует последующие ответы бота под выбранный уровень
+    3. Отправляет подтверждение о выборе уровня
+    
+    Args:
+        callback (types.CallbackQuery): Объект callback-запроса
+        state (FSMContext): Контекст состояния бота
+    """
+    level_data = {
+        "level_1": {"level": "beginner", "name": "Технический (Уровень 1)"},
+        "level_2": {"level": "intermediate", "name": "Квалифицированный (Уровень 2)"},
+        "level_3": {"level": "advanced", "name": "Экспертный (Уровень 3)"}
+    }
+    
+    selected_level = level_data[callback.data]
+    await callback.answer(f"Выбран {selected_level['name']} уровень")
+    
+    # Логируем выбор пользователя
+    log_user_message(callback.from_user.id, f"[ACTION] Выбран уровень специалиста: {selected_level['name']}")
+    
+    user_logger = get_user_logger(
+        user_id=callback.from_user.id,
+        operation="level_selected"
+    )
+    user_logger.info(f"Пользователь выбрал уровень специалиста: {selected_level['name']}")
+    
+    # Получаем текущее состояние
+    data = await state.get_data()
+    user_knowledge_level = data.get("user_knowledge_level", {"general": "beginner", "topics": {}})
+    
+    # Обновляем уровень знаний пользователя
+    user_knowledge_level["general"] = selected_level["level"]
+    
+    # Сохраняем обновленное состояние
+    await state.update_data(user_knowledge_level=user_knowledge_level)
+    
+    # Отправляем подтверждение
+    confirmation_text = f"""<b>Выбран уровень: {selected_level['name']}</b>
+
+Я буду адаптировать свои ответы в соответствии с вашим уровнем знаний.
+Вы можете изменить уровень в любой момент через кнопку "Выбрать уровень специалиста".
+
+Задавайте вопросы по неразрушающему контролю, и я постараюсь дать наиболее подходящие ответы.
+"""
+    
+    sent_message = await callback.message.answer(
+        confirmation_text,
+        parse_mode="HTML",
+        reply_markup=create_main_inline_keyboard()
+    )
+    
+    # Сохраняем ID сообщения
+    await state.update_data(last_bot_message_id=sent_message.message_id)
+    
+    # Скрываем кнопки предыдущего сообщения
+    await callback.message.edit_reply_markup(reply_markup=None)
+
+@dp.callback_query(lambda c: c.data == "back_to_main")
+async def process_back_to_main_callback(callback: types.CallbackQuery, state: FSMContext):
+    """
+    Обработчик нажатия на кнопку возврата к основной клавиатуре.
+    
+    Действия:
+    1. Возвращает основную клавиатуру с кнопками
+    2. Логирует действие пользователя
+    
+    Args:
+        callback (types.CallbackQuery): Объект callback-запроса
+        state (FSMContext): Контекст состояния бота
+    """
+    await callback.answer("Возврат к основному меню")
+    
+    # Логируем действие
+    log_user_message(callback.from_user.id, "[ACTION] Возврат к основному меню")
+    
+    # Скрываем кнопки предыдущего сообщения
+    await callback.message.edit_reply_markup(reply_markup=None)
+    
+    # Отправляем сообщение с основной клавиатурой
+    sent_message = await callback.message.answer(
+        "Вы вернулись в основное меню. Задавайте вопросы по неразрушающему контролю.",
+        parse_mode="HTML",
+        reply_markup=create_main_inline_keyboard()
+    )
+    
+    # Сохраняем ID сообщения
+    await state.update_data(last_bot_message_id=sent_message.message_id)
 
 async def generate_dialog_summary(messages, user_id):
     """

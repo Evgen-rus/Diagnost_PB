@@ -58,3 +58,9 @@ telegram_bot_deploy.tar.gz
 # Logs folder - ignore contents but keep folder
 logs/*
 !logs/.gitkeep
+
+# Ignore all files in the data folder
+data/*
+
+# Keep the data folder itself
+!data/.gitkeep
