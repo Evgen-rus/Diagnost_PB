@@ -87,4 +87,47 @@ def create_level_selection_keyboard() -> InlineKeyboardMarkup:
     except Exception as e:
         error_msg = f"Ошибка при создании клавиатуры выбора уровня: {str(e)}"
         logger.error(error_msg, exc_info=True)
-        raise KeyboardError(error_msg, "Не удалось создать интерфейс выбора уровня. Попробуйте позже.") 
+        raise KeyboardError(error_msg, "Не удалось создать интерфейс выбора уровня. Попробуйте позже.")
+
+def create_mixed_inline_keyboard(show_additional_buttons: bool = False) -> InlineKeyboardMarkup:
+    """
+    Создает комбинированную inline-клавиатуру, где кнопка выбора уровня специалиста 
+    всегда видна, а остальные кнопки появляются в зависимости от параметра.
+    
+    Args:
+        show_additional_buttons (bool): Флаг, показывающий, нужно ли отображать дополнительные кнопки
+                                    (Объясни, Новый вопрос)
+    
+    Returns:
+        InlineKeyboardMarkup: Объект inline-клавиатуры с кнопками
+    """
+    try:
+        keyboard_logger = get_user_logger(user_id=0, operation="mixed_keyboard_creation")
+        keyboard_logger.info(f"Создание комбинированной клавиатуры, доп.кнопки: {show_additional_buttons}")
+        
+        builder = InlineKeyboardBuilder()
+        
+        # Добавляем дополнительные кнопки только если флаг включен
+        if show_additional_buttons:
+            # Добавляем кнопки в первый ряд
+            builder.row(
+                InlineKeyboardButton(text="Объясни", callback_data="explain")
+            )
+            
+            # Добавляем кнопку "Новый вопрос" во второй ряд
+            builder.row(
+                InlineKeyboardButton(text="Новый вопрос", callback_data="new_question")
+            )
+        
+        # Кнопка выбора уровня специалиста всегда видна
+        builder.row(
+            InlineKeyboardButton(text="Выбрать уровень специалиста", callback_data="select_level")
+        )
+        
+        keyboard_logger.info("Комбинированная клавиатура успешно создана")
+        return builder.as_markup()
+        
+    except Exception as e:
+        error_msg = f"Ошибка при создании комбинированной клавиатуры: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        raise KeyboardError(error_msg, "Не удалось создать интерфейс. Попробуйте позже.") 

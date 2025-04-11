@@ -10,7 +10,7 @@ import json
 from openai import AsyncOpenAI
 from utils.logger import logger, get_user_logger, log_user_message, log_bot_response
 from utils.token_counter import token_counter
-from utils.keyboards import create_main_inline_keyboard, create_level_selection_keyboard
+from utils.keyboards import create_main_inline_keyboard, create_level_selection_keyboard, create_mixed_inline_keyboard
 from utils.database import init_database, log_message
 from utils.session_cleaner import update_user_activity, start_cleaner
 import datetime
@@ -115,8 +115,15 @@ async def start_command(message: types.Message, state: FSMContext):
         ]
     )
     
-    # Отправляем первый вопрос пользователю
-    await message.answer(first_query_response, parse_mode="HTML")
+    # Отправляем первый вопрос пользователю с клавиатурой
+    sent_message = await message.answer(
+        first_query_response, 
+        parse_mode="HTML",
+        reply_markup=create_mixed_inline_keyboard(show_additional_buttons=False)
+    )
+    
+    # Сохраняем ID сообщения для последующего удаления клавиатуры
+    await state.update_data(last_bot_message_id=sent_message.message_id)
     
     # Логируем отправку первого вопроса
     log_bot_response(message.from_user.id, first_query_response)
@@ -355,7 +362,7 @@ async def process_message(message: types.Message, state: FSMContext):
         sent_message = await message.answer(
             gpt_response, 
             parse_mode="HTML",
-            reply_markup=create_main_inline_keyboard() if show_buttons else None
+            reply_markup=create_mixed_inline_keyboard(show_additional_buttons=show_buttons)
         )
         
         # Сохраняем ID сообщения для последующего удаления клавиатуры
@@ -615,14 +622,28 @@ async def process_main_keyboard_callback(callback: types.CallbackQuery, state: F
     messages = data.get("messages", [])
     messages.append({"role": "user", "content": text})
     
+    # Получаем информацию об уровне знаний пользователя
+    user_knowledge_level = data.get("user_knowledge_level", {"general": "beginner", "topics": {}})
+    
     # Показываем индикатор набора текста
     typing_task = asyncio.create_task(keep_typing(callback.message.chat.id))
     
     try:
+        # Создаем дополнительную инструкцию с учетом уровня специалиста
+        level_descriptions = {
+            "beginner": "Технический специалист (Уровень 1): Базовый уровень знаний, работа под руководством, выполнение стандартных процедур.",
+            "intermediate": "Квалифицированный специалист (Уровень 2): Самостоятельное проведение контроля, интерпретация результатов, соответствие стандартам.",
+            "advanced": "Экспертный специалист (Уровень 3): Глубокое понимание методик, разработка процедур контроля, сертификация и обучение."
+        }
+        
+        level_info = f"Уровень пользователя: {level_descriptions.get(user_knowledge_level['general'], 'Не определен')}"
+        additional_instruction = f"\n\nВАЖНО: {level_info}\nДай объяснение с учетом уровня пользователя, адаптируя сложность и детализацию ответа."
+        
         # Получаем ответ от модели
         response = await get_gpt_response(
             messages,
             LEARNING_ASSISTANT_PROMPT,
+            additional_system_content=additional_instruction,
             user_id=callback.from_user.id
         )
         
@@ -640,7 +661,7 @@ async def process_main_keyboard_callback(callback: types.CallbackQuery, state: F
         sent_message = await callback.message.answer(
             response, 
             parse_mode="HTML", 
-            reply_markup=create_main_inline_keyboard() if show_buttons else None
+            reply_markup=create_mixed_inline_keyboard(show_additional_buttons=show_buttons)
         )
         await state.update_data(last_bot_message_id=sent_message.message_id)
         
@@ -819,7 +840,7 @@ async def process_level_selection_callback(callback: types.CallbackQuery, state:
     sent_message = await callback.message.answer(
         confirmation_text,
         parse_mode="HTML",
-        reply_markup=create_main_inline_keyboard()
+        reply_markup=create_mixed_inline_keyboard(show_additional_buttons=True)
     )
     
     # Сохраняем ID сообщения
@@ -853,7 +874,7 @@ async def process_back_to_main_callback(callback: types.CallbackQuery, state: FS
     sent_message = await callback.message.answer(
         "Вы вернулись в основное меню. Задавайте вопросы по неразрушающему контролю.",
         parse_mode="HTML",
-        reply_markup=create_main_inline_keyboard()
+        reply_markup=create_mixed_inline_keyboard(show_additional_buttons=True)
     )
     
     # Сохраняем ID сообщения
