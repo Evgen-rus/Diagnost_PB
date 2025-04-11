@@ -104,9 +104,9 @@ async def start_command(message: types.Message, state: FSMContext):
     first_query_response = await get_gpt_response(
         [{"role": "system", "content": FIRST_QUESTION_PROMPT}],
         "",
-        user_id=message.from_user.id
-    )
-    
+            user_id=message.from_user.id
+        )
+        
     # Сохраняем ответ GPT в историю сообщений
     await state.update_data(
         messages=[
@@ -723,14 +723,14 @@ async def process_new_question_callback(callback: types.CallbackQuery, state: FS
     response = "Контекст беседы сброшен. Вы можете задать новый вопрос по любой интересующей вас теме."
     
     sent_message = await callback.message.answer(
-        response,
-        parse_mode="HTML",
+        response, 
+        parse_mode="HTML", 
         reply_markup=create_main_inline_keyboard()
     )
     
     # Сохраняем ID сообщения для последующего удаления клавиатуры
     await state.update_data(last_bot_message_id=sent_message.message_id)
-    
+        
     # Логируем ответ бота
     log_bot_response(callback.from_user.id, response)
 
