@@ -24,7 +24,7 @@ try:
     
     # OpenAI configuration
     OPENAI_API_KEY = get_env_var("OPENAI_API_KEY")
-    OPENAI_MODEL = get_env_var("OPENAI_MODEL", required=False, default="gpt-4o-mini")
+    OPENAI_MODEL = get_env_var("OPENAI_MODEL", required=False, default="gpt-4.1-nano")
     
     logger.info("Конфигурация успешно загружена")
 

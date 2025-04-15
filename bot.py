@@ -30,7 +30,7 @@ dp = Dispatcher(storage=storage)
 
 # Инициализация OpenAI клиента
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
 
 # Определение состояний диалога
 class BotStates(StatesGroup):
@@ -609,37 +609,40 @@ async def main():
 
 @dp.callback_query(lambda c: c.data in ["give_example", "explain"])
 async def process_main_keyboard_callback(callback: types.CallbackQuery, state: FSMContext):
+    """
+    Обработчик нажатия кнопок основной клавиатуры.
+    При нажатии на кнопку "Объясни" показывает развернутое объяснение последнего ответа.
+    """
     await callback.answer()
     await callback.message.edit_reply_markup(reply_markup=None)
-    # Получаем текст команды
-    text = "Объясни"
     
-    # Логируем команду как обычное сообщение
-    log_user_message(callback.from_user.id, text)
-    
-    # Обрабатываем команду напрямую как сообщение пользователя
+    # Получаем данные состояния
     data = await state.get_data()
     messages = data.get("messages", [])
-    messages.append({"role": "user", "content": text})
-    
-    # Получаем информацию об уровне знаний пользователя
     user_knowledge_level = data.get("user_knowledge_level", {"general": "beginner", "topics": {}})
     
     # Показываем индикатор набора текста
     typing_task = asyncio.create_task(keep_typing(callback.message.chat.id))
     
     try:
-        # Создаем дополнительную инструкцию с учетом уровня специалиста
+        # Создаем дополнительную инструкцию для развернутого объяснения
         level_descriptions = {
-            "beginner": "Технический специалист (Уровень 1): Базовый уровень знаний, работа под руководством, выполнение стандартных процедур.",
-            "intermediate": "Квалифицированный специалист (Уровень 2): Самостоятельное проведение контроля, интерпретация результатов, соответствие стандартам.",
-            "advanced": "Экспертный специалист (Уровень 3): Глубокое понимание методик, разработка процедур контроля, сертификация и обучение."
+            "beginner": "Технический специалист (Уровень 1)",
+            "intermediate": "Квалифицированный специалист (Уровень 2)",
+            "advanced": "Экспертный специалист (Уровень 3)"
         }
         
         level_info = f"Уровень пользователя: {level_descriptions.get(user_knowledge_level['general'], 'Не определен')}"
-        additional_instruction = f"\n\nВАЖНО: {level_info}\nДай объяснение с учетом уровня пользователя, адаптируя сложность и детализацию ответа."
+        additional_instruction = f"""
+ИНСТРУКЦИЯ ДЛЯ РАЗВЕРНУТОГО ОТВЕТА:
+1. Дай подробное объяснение последней темы
+2. Используй примеры и иллюстрации
+3. Опиши практическое применение
+4. Укажи все релевантные источники
+5. {level_info} - адаптируй сложность объяснения
+"""
         
-        # Получаем ответ от модели
+        # Получаем развернутый ответ от модели
         response = await get_gpt_response(
             messages,
             LEARNING_ASSISTANT_PROMPT,
@@ -647,11 +650,11 @@ async def process_main_keyboard_callback(callback: types.CallbackQuery, state: F
             user_id=callback.from_user.id
         )
         
-        # Сохраняем ответ
+        # Сохраняем ответ в историю
         messages.append({"role": "assistant", "content": response})
         await state.update_data(messages=messages)
         
-        # Обновляем информацию об активности пользователя в базе данных
+        # Обновляем информацию об активности пользователя
         await update_user_activity(user_id=callback.from_user.id, state=state)
         
         # Проверяем, нужно ли показывать кнопки
@@ -668,41 +671,30 @@ async def process_main_keyboard_callback(callback: types.CallbackQuery, state: F
         # Логируем ответ
         log_bot_response(callback.from_user.id, response)
         
-        # Отменяем задачу обновления статуса
-        typing_task.cancel()
-        
     except Exception as e:
-        # Отменяем задачу обновления статуса в случае ошибки
-        typing_task.cancel()
         logger.error(f"Ошибка при обработке callback-запроса: {str(e)}", exc_info=True)
         await callback.message.answer("Произошла ошибка при обработке запроса. Пожалуйста, попробуйте еще раз.", parse_mode="HTML")
+    finally:
+        # Отменяем задачу обновления статуса
+        typing_task.cancel()
 
-@dp.callback_query(lambda c: c.data == "new_question")
-async def process_new_question_callback(callback: types.CallbackQuery, state: FSMContext):
+@dp.callback_query(lambda c: c.data == "change_topic")
+async def process_topic_change_callback(callback: types.CallbackQuery, state: FSMContext):
     """
-    Обработчик нажатия на кнопку "Новый вопрос".
-    
-    Действия:
-    1. Сбрасывает контекст беседы (историю сообщений)
-    2. Сохраняет базовое состояние бота
-    3. Отправляет сообщение о начале нового диалога
-    4. Обновляет информацию об активности пользователя в базе данных
-    
-    Args:
-        callback (types.CallbackQuery): Объект callback-запроса
-        state (FSMContext): Контекст состояния бота
+    Обработчик нажатия на кнопку "Сменить тему".
+    Сбрасывает контекст текущей темы и подготавливает бота к обсуждению новой темы.
     """
-    await callback.answer("Начинаем новый вопрос")
+    await callback.answer("Переходим к новой теме")
     await callback.message.edit_reply_markup(reply_markup=None)
     
     # Логируем действие
-    log_user_message(callback.from_user.id, "[ACTION] Новый вопрос")
+    log_user_message(callback.from_user.id, "[ACTION] Смена темы обсуждения")
     
     user_logger = get_user_logger(
         user_id=callback.from_user.id,
-        operation="new_question"
+        operation="change_topic"
     )
-    user_logger.info("Пользователь запросил сброс контекста беседы")
+    user_logger.info("Пользователь запросил смену темы обсуждения")
     
     # Сохраняем текущее состояние, но сбрасываем историю сообщений
     data = await state.get_data()
@@ -713,14 +705,21 @@ async def process_new_question_callback(callback: types.CallbackQuery, state: FS
         answers=data.get("answers", {}),
         topics=data.get("topics", {"current": "", "history": [], "related_topics": {}}),
         user_knowledge_level=data.get("user_knowledge_level", {"general": "beginner", "topics": {}}),
-        message_counter=0  # Сбрасываем счетчик сообщений
+        message_counter=0
     )
     
-    # Обновляем информацию об активности пользователя в базе данных
+    # Обновляем информацию об активности пользователя
     await update_user_activity(user_id=callback.from_user.id, state=state)
     
-    # Отправляем сообщение о начале нового диалога
-    response = "Контекст беседы сброшен. Вы можете задать новый вопрос по любой интересующей вас теме."
+    # Отправляем сообщение о смене темы с объяснением преимуществ
+    response = """<b>Переходим к новой теме!</b>
+
+Это поможет:
+• Получать более точные ответы по новой теме
+• Избежать путаницы с предыдущей темой
+• Начать обсуждение с чистого листа
+
+Задавайте любые вопросы по неразрушающему контролю."""
     
     sent_message = await callback.message.answer(
         response, 
@@ -728,9 +727,9 @@ async def process_new_question_callback(callback: types.CallbackQuery, state: FS
         reply_markup=create_main_inline_keyboard()
     )
     
-    # Сохраняем ID сообщения для последующего удаления клавиатуры
+    # Сохраняем ID сообщения
     await state.update_data(last_bot_message_id=sent_message.message_id)
-        
+    
     # Логируем ответ бота
     log_bot_response(callback.from_user.id, response)
 
@@ -832,7 +831,7 @@ async def process_level_selection_callback(callback: types.CallbackQuery, state:
     confirmation_text = f"""<b>Выбран уровень: {selected_level['name']}</b>
 
 Я буду адаптировать свои ответы в соответствии с вашим уровнем знаний.
-Вы можете изменить уровень в любой момент через кнопку "Выбрать уровень специалиста".
+Вы можете изменить уровень специалиста в любой момент, прописав нужный вам уровень в чате.
 
 Задавайте вопросы по неразрушающему контролю, и я постараюсь дать наиболее подходящие ответы.
 """

@@ -26,19 +26,10 @@ def create_main_inline_keyboard() -> InlineKeyboardMarkup:
         
         builder = InlineKeyboardBuilder()
         
-        # Добавляем кнопки в первый ряд
+        # Добавляем основные кнопки управления (без кнопки выбора уровня)
         builder.row(
-            InlineKeyboardButton(text="Объясни", callback_data="explain")
-        )
-        
-        # Добавляем кнопку "Новый вопрос" во второй ряд
-        builder.row(
-            InlineKeyboardButton(text="Новый вопрос", callback_data="new_question")
-        )
-        
-        # Добавляем кнопку выбора уровня специалиста
-        builder.row(
-            InlineKeyboardButton(text="Выбрать уровень специалиста", callback_data="select_level")
+            InlineKeyboardButton(text="Объясни", callback_data="explain"),
+            InlineKeyboardButton(text="Сменить тему", callback_data="change_topic")
         )
         
         keyboard_logger.info("Inline-клавиатура успешно создана")
@@ -91,12 +82,12 @@ def create_level_selection_keyboard() -> InlineKeyboardMarkup:
 
 def create_mixed_inline_keyboard(show_additional_buttons: bool = False) -> InlineKeyboardMarkup:
     """
-    Создает комбинированную inline-клавиатуру, где кнопка выбора уровня специалиста 
-    всегда видна, а остальные кнопки появляются в зависимости от параметра.
+    Создает комбинированную inline-клавиатуру.
+    В начале диалога показывает только кнопку выбора уровня,
+    в остальных случаях показывает основные кнопки управления.
     
     Args:
-        show_additional_buttons (bool): Флаг, показывающий, нужно ли отображать дополнительные кнопки
-                                    (Объясни, Новый вопрос)
+        show_additional_buttons (bool): Флаг, показывающий, нужно ли отображать основные кнопки управления
     
     Returns:
         InlineKeyboardMarkup: Объект inline-клавиатуры с кнопками
@@ -107,22 +98,17 @@ def create_mixed_inline_keyboard(show_additional_buttons: bool = False) -> Inlin
         
         builder = InlineKeyboardBuilder()
         
-        # Добавляем дополнительные кнопки только если флаг включен
         if show_additional_buttons:
-            # Добавляем кнопки в первый ряд
+            # В обычном режиме показываем основные кнопки управления (без выбора уровня)
             builder.row(
-                InlineKeyboardButton(text="Объясни", callback_data="explain")
+                InlineKeyboardButton(text="Объясни", callback_data="explain"),
+                InlineKeyboardButton(text="Сменить тему", callback_data="change_topic")
             )
-            
-            # Добавляем кнопку "Новый вопрос" во второй ряд
+        else:
+            # В начале диалога показываем только кнопку выбора уровня
             builder.row(
-                InlineKeyboardButton(text="Новый вопрос", callback_data="new_question")
+                InlineKeyboardButton(text="Выбрать уровень", callback_data="select_level")
             )
-        
-        # Кнопка выбора уровня специалиста всегда видна
-        builder.row(
-            InlineKeyboardButton(text="Выбрать уровень специалиста", callback_data="select_level")
-        )
         
         keyboard_logger.info("Комбинированная клавиатура успешно создана")
         return builder.as_markup()
