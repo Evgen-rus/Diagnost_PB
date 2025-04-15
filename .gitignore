@@ -67,3 +67,4 @@ data/*
 
 # Cursor folder
 .cursor/
+data/bot_dialogs.db
