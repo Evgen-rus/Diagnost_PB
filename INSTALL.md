@@ -50,7 +50,7 @@ TELEGRAM_BOT_TOKEN=ваш_токен_от_BotFather
 
 # OpenAI API
 OPENAI_API_KEY=ваш_ключ_api_openai
-OPENAI_MODEL=gpt-4o-mini
+OPENAI_MODEL=ваша_модель_openai
 
 # Logging
 LOG_LEVEL=INFO

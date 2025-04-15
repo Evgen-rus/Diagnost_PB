@@ -66,7 +66,7 @@ cp .env.example .env
 ```
 TELEGRAM_BOT_TOKEN=your_bot_token_here
 OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-4o-mini
+OPENAI_MODEL=ваша_модель_openai
 LOG_LEVEL=INFO
 ENABLE_DIALOG_LOGGING=true
 ```
