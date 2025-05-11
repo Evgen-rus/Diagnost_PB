@@ -67,4 +67,7 @@ data/*
 
 # Cursor folder
 .cursor/
+
+# Database
 data/bot_dialogs.db
+knowledge_base_v2.db
