@@ -23,9 +23,9 @@ class TokenCounter:
         
         # Стоимость за 1000 токенов (в долларах)
         self.price_per_1k = {
-            'gpt-4o-mini': {
-                'input': 0.00015,  # $0.150 / 1M tokens
-                'output': 0.0006   # $0.600 / 1M tokens
+            'gpt-4.1-nano': {
+                'input': 0.0001,  # $0.10 / 1M tokens
+                'output': 0.0004   # $0.40 / 1M tokens
             },
             'text-embedding-ada-002': {
                 'input': 0.0001,   # $0.10 / 1M tokens
@@ -122,8 +122,8 @@ class TokenCounter:
         tokens_logger = get_user_logger(user_id=0, operation="cost_calculation")
         
         if model not in self.price_per_1k:
-            tokens_logger.warning(f"Неизвестная модель {model}, используем цены gpt-4o-mini")
-            model = 'gpt-4o-mini'
+            tokens_logger.warning(f"Неизвестная модель {model}, используем цены gpt-4.1-nano")
+            model = 'gpt-4.1-nano'
             
         input_cost = (input_tokens / 1000) * self.price_per_1k[model]['input']
         output_cost = (output_tokens / 1000) * self.price_per_1k[model]['output']
