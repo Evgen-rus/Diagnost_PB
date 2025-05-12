@@ -71,3 +71,6 @@ data/*
 # Database
 data/bot_dialogs.db
 knowledge_base_v2.db
+
+# Results test
+results/*

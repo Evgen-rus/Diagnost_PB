@@ -3,3 +3,5 @@ python-dotenv==1.0.0
 openai==1.57.4
 requests==2.31.0
 tiktoken==0.8.0
+xlsxwriter==3.2.3
+openpyxl==3.1.2

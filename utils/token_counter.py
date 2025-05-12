@@ -16,10 +16,20 @@ class TokenCounter:
             total_cost (float): Общая стоимость запросов в долларах
             encoders (dict): Кэш энкодеров для различных моделей
             price_per_1k (dict): Стоимость использования 1000 токенов для разных моделей
+            last_request (dict): Информация о последнем запросе (для тестирования)
         """
         self.total_tokens = 0
         self.total_cost = 0
         self.encoders = {}
+        
+        # Данные о последнем запросе (для тестирования)
+        self.last_request = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "cost": 0.0,
+            "model": ""
+        }
         
         # Стоимость за 1000 токенов (в долларах)
         self.price_per_1k = {
@@ -47,6 +57,21 @@ class TokenCounter:
         """
         self.total_tokens = 0
         self.total_cost = 0
+        self._reset_last_request()
+    
+    def _reset_last_request(self):
+        """
+        Сбрасывает информацию о последнем запросе.
+        
+        Вызывается перед каждым новым запросом для тестирования.
+        """
+        self.last_request = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "cost": 0.0,
+            "model": ""
+        }
     
     def _get_encoder(self, model: str) -> tiktoken.Encoding:
         """
@@ -157,12 +182,44 @@ class TokenCounter:
         self.total_tokens += input_tokens + output_tokens
         self.total_cost += cost
         
+        # Обновляем информацию о последнем запросе (для тестирования)
+        self.last_request = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+            "cost": cost,
+            "model": model
+        }
+        
         # Компактный вывод в одну строку
         tokens_logger.info(
             f"Токены: вход={input_tokens}, выход={output_tokens}, цена=${cost:.6f}, всего={self.total_tokens}, общая цена=${self.total_cost:.6f}"
         )
         
         return input_tokens + output_tokens
+    
+    def get_last_request_info(self) -> Dict:
+        """
+        Возвращает информацию о последнем запросе.
         
+        Returns:
+            Dict: Словарь с информацией о токенах и стоимости последнего запроса
+        """
+        return self.last_request
+    
+    def start_test_request(self, model: str):
+        """
+        Начинает новый тестовый запрос.
+        
+        Args:
+            model: Название модели GPT
+        """
+        self._reset_last_request()
+        self.last_request["model"] = model
+        
+        # Создаем логгер для записи начала теста
+        test_logger = get_user_logger(user_id=0, operation="test_tokens")
+        test_logger.info(f"Начало тестового запроса с моделью {model}")
+
 # Создаем глобальный счетчик токенов
 token_counter = TokenCounter() 
