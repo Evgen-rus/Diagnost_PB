@@ -74,6 +74,20 @@ def save_to_excel(file_path: str, data: List[List[Any]], headers: List[str]) -> 
             'border': 1
         })
         
+        date_format = workbook.add_format({
+            'align': 'center',
+            'valign': 'vcenter',
+            'border': 1,
+            'num_format': 'yyyy-mm-dd'
+        })
+        
+        time_format = workbook.add_format({
+            'align': 'center',
+            'valign': 'vcenter',
+            'border': 1,
+            'num_format': 'hh:mm:ss'
+        })
+        
         # Записываем заголовки
         for col, header in enumerate(headers):
             worksheet.write(0, col, header, header_format)
@@ -81,22 +95,28 @@ def save_to_excel(file_path: str, data: List[List[Any]], headers: List[str]) -> 
         # Записываем данные
         for row_idx, row_data in enumerate(data, 1):
             for col_idx, cell_value in enumerate(row_data):
-                # Применяем форматирование в зависимости от типа данных
-                if isinstance(cell_value, (int, float)):
+                # Применяем форматирование в зависимости от типа данных и столбца
+                if col_idx == 0:  # Столбец "Дата"
+                    worksheet.write(row_idx, col_idx, cell_value, date_format)
+                elif col_idx == 1:  # Столбец "Время"
+                    worksheet.write(row_idx, col_idx, cell_value, time_format)
+                elif isinstance(cell_value, (int, float)):
                     worksheet.write(row_idx, col_idx, cell_value, number_format)
                 else:
                     worksheet.write(row_idx, col_idx, cell_value, cell_format)
         
-        # Устанавливаем ширину столбцов
+        # Устанавливаем ширину столбцов с учетом новых столбцов
         column_widths = {
-            0: 30,  # Вопрос
-            1: 60,  # Ответ
-            2: 10,  # Оценка
-            3: 10,  # Токены
-            4: 30,  # Комментарий
-            5: 10,  # Время
-            6: 12,  # Цена
-            7: 30   # Чанки
+            0: 12,  # Дата
+            1: 10,  # Время
+            2: 30,  # Вопрос
+            3: 60,  # Ответ
+            4: 10,  # Оценка
+            5: 10,  # Токены
+            6: 30,  # Комментарий
+            7: 12,  # Время генерации
+            8: 12,  # Цена
+            9: 30   # Чанки
         }
         
         for col, width in column_widths.items():
@@ -143,10 +163,10 @@ class TestTable:
             # Определяем формат по расширению
             self.file_format = detect_file_format(self.output_file)
             
-            # Заголовки для таблицы
+            # Заголовки для таблицы с добавлением даты и времени
             self.headers = [
-                "Вопрос", "Ответ", "Оценка", "Токены", "Комментарий", 
-                "Время", "Цена", "Чанки"
+                "Дата", "Время", "Вопрос", "Ответ", "Оценка", "Токены", "Комментарий", 
+                "Время генерации", "Цена $", "Чанки"
             ]
             
             # Проверяем, существует ли директория для файла
@@ -243,6 +263,11 @@ class TestTable:
             # Запрашиваем комментарий
             comment = input("Введите комментарий к оценке: ")
             
+            # Получаем текущую дату и время для записи в таблицу
+            current_datetime = datetime.now()
+            current_date = current_datetime.strftime("%Y-%m-%d")
+            current_time = current_datetime.strftime("%H:%M:%S")
+            
             # Сохраняем результат в БД
             log_test_result(
                 tester_id=tester_id,
@@ -258,7 +283,10 @@ class TestTable:
             
             # Сохраняем результат в файл, если он указан
             if self.output_file:
+                # Добавляем дату и время в начало данных
                 row_data = [
+                    current_date,  # Дата
+                    current_time,  # Время
                     question, 
                     response, 
                     score, 
@@ -313,6 +341,8 @@ class TestTable:
             
             self.logger.info(f"Тест завершен. Оценка: {score}")
             return {
+                "date": current_date,
+                "time": current_time,
                 "question": question,
                 "answer": response,
                 "score": score,
@@ -416,18 +446,25 @@ class TestTable:
                     print("Нет результатов тестирования для экспорта.")
                     return
                 
-                # Подготавливаем заголовки и данные
+                # Подготавливаем заголовки и данные с новыми столбцами
                 headers = [
-                    "ID", "Дата и время", "ID тестировщика", "Вопрос", "Ответ", 
+                    "Дата", "Время",  # Новые столбцы
+                    "ID", "ID тестировщика", "Вопрос", "Ответ", 
                     "Оценка", "Токены", "Комментарий", "Время генерации (сек)", 
                     "Стоимость", "Чанки"
                 ]
                 
                 data = []
                 for result in results:
+                    # Разделяем timestamp на дату и время
+                    timestamp = datetime.fromisoformat(result['timestamp'])
+                    date_str = timestamp.strftime("%Y-%m-%d")
+                    time_str = timestamp.strftime("%H:%M:%S")
+                    
                     data.append([
+                        date_str,  # Дата
+                        time_str,  # Время
                         result['id'],
-                        result['timestamp'],
                         result['tester_id'],
                         result['question'],
                         result['answer'],
@@ -443,8 +480,51 @@ class TestTable:
                 save_to_excel(output_file, data, headers)
                 print(f"Результаты тестирования экспортированы в Excel-файл: {output_file}")
             else:
-                # Используем существующую функцию для CSV
-                export_test_results_to_csv(output_file)
+                # Для CSV модифицируем существующую функцию
+                from utils.database import get_test_results
+                results = get_test_results(limit=1000)
+                
+                if not results:
+                    logger.warning(f"Нет результатов тестирования для экспорта")
+                    print("Нет результатов тестирования для экспорта.")
+                    return
+                
+                # Записываем данные в CSV с разделенными столбцами даты и времени
+                import csv
+                with open(output_file, mode='w', newline='', encoding='utf-8') as file:
+                    writer = csv.writer(file)
+                    
+                    # Записываем заголовки
+                    headers = [
+                        "Дата", "Время",  # Новые столбцы
+                        "ID", "ID тестировщика", "Вопрос", "Ответ", 
+                        "Оценка", "Токены", "Комментарий", "Время генерации (сек)", 
+                        "Стоимость", "Чанки"
+                    ]
+                    writer.writerow(headers)
+                    
+                    # Записываем данные
+                    for result in results:
+                        # Разделяем timestamp на дату и время
+                        timestamp = datetime.fromisoformat(result['timestamp'])
+                        date_str = timestamp.strftime("%Y-%m-%d")
+                        time_str = timestamp.strftime("%H:%M:%S")
+                        
+                        writer.writerow([
+                            date_str,  # Дата
+                            time_str,  # Время
+                            result['id'],
+                            result['tester_id'],
+                            result['question'],
+                            result['answer'],
+                            result['score'],
+                            result['tokens'],
+                            result['comment'],
+                            result['generation_time'],
+                            result['cost'],
+                            json.dumps(result['chunks'], ensure_ascii=False)
+                        ])
+                
                 print(f"Результаты тестирования экспортированы в CSV-файл: {output_file}")
                 
         except Exception as e:

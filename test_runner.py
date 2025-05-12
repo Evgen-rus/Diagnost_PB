@@ -21,6 +21,7 @@ load_dotenv()
 from bot import bot, OPENAI_MODEL, get_gpt_response
 from utils.test_framework import TestTable
 from utils.logger import logger
+from utils.database import init_database
 
 # Примечание: объект bot передается в test_framework, но его методы не используются напрямую.
 # Вместо этого используется импортированная функция get_gpt_response
@@ -29,13 +30,21 @@ async def run_tests():
     Основная функция для запуска тестирования.
     Обрабатывает аргументы командной строки и запускает соответствующие тесты.
     """
+    # Инициализируем базу данных перед началом тестирования
+    try:
+        init_database()
+        logger.info("База данных SQLite инициализирована для тестирования")
+    except Exception as e:
+        logger.error(f"Ошибка при инициализации базы данных: {str(e)}")
+        print(f"Ошибка при инициализации базы данных: {str(e)}")
+    
     # Создаем парсер аргументов
     parser = argparse.ArgumentParser(description="Тестирование нейроконсультанта")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--question", "-q", type=str, help="Вопрос для тестирования")
     group.add_argument("--file", "-f", type=str, help="Файл с вопросами для тестирования")
     group.add_argument("--export", "-e", type=str, help="Экспорт результатов в CSV или Excel (.xlsx)")
-    parser.add_argument("--output", "-o", type=str, help="Файл для сохранения результатов (.csv или .xlsx)", default="test_results.csv")
+    parser.add_argument("--output", "-o", type=str, help="Файл для сохранения результатов (.csv или .xlsx)", default="test_results.xlsx")
     parser.add_argument("--tester", "-t", type=int, help="ID тестировщика", default=999)
     
     args = parser.parse_args()
