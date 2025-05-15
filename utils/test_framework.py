@@ -203,7 +203,8 @@ class TestTable:
         """
         self.logger.info(f"Начало теста. Вопрос: {question}")
         
-        # Сбрасываем информацию о предыдущем запросе
+        # Сбрасываем счетчики токенов для нового теста
+        token_counter.reset_counters()
         token_counter.start_test_request(os.getenv("OPENAI_MODEL", "gpt-4.1-nano"))
         
         # Замеряем время начала запроса
@@ -229,9 +230,9 @@ class TestTable:
             generation_time = end_time - start_time
             
             # Получаем данные о токенах и стоимости
-            token_data = token_counter.get_last_request_info()
-            tokens = token_data.get("total_tokens", 0)
-            cost = token_data.get("cost", 0.0)
+            # Используем общие счетчики вместо данных о последнем запросе
+            tokens = token_counter.total_tokens
+            cost = token_counter.total_cost
             
             # В этом примере мы заглушаем данные о чанках
             # В реальной системе здесь должна быть логика получения использованных чанков
