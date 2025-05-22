@@ -16,7 +16,6 @@ from utils.token_counter import token_counter
 from utils.logger import logger, get_user_logger
 from utils.database import log_test_result, export_test_results_to_csv
 from prompts import LEARNING_ASSISTANT_PROMPT
-from bot import get_gpt_response
 
 def detect_file_format(file_path: str) -> str:
     """
@@ -198,164 +197,165 @@ class TestTable:
         
         Args:
             question: Вопрос для теста
-            bot_instance: Экземпляр бота для проведения теста (не используется напрямую)
+            bot_instance: Экземпляр бота (не используется напрямую)
             tester_id: ID тестировщика (по умолчанию 0)
+            
+        Returns:
+            dict: Результаты теста или None в случае ошибки
         """
-        self.logger.info(f"Начало теста. Вопрос: {question}")
-        
-        # Сбрасываем счетчики токенов для нового теста
-        token_counter.reset_counters()
-        token_counter.start_test_request(os.getenv("OPENAI_MODEL", "gpt-4.1-nano"))
-        
-        # Замеряем время начала запроса
-        start_time = time.time()
-        
-        # Получаем ответ от модели
-        # Используем импортированную функцию get_gpt_response вместо метода бота
         try:
-            system_content = LEARNING_ASSISTANT_PROMPT
+            self.logger.info(f"Начало теста. Вопрос: {question}")
             
-            # Формируем сообщения для запроса
-            messages = [{"role": "user", "content": question}]
+            # Замеряем время начала запроса
+            start_time = time.time()
             
-            # Получаем ответ, используя импортированную функцию
-            response = await get_gpt_response(
-                messages=messages, 
-                system_content=system_content,
-                user_id=tester_id
-            )
-            
-            # Замеряем время окончания запроса
-            end_time = time.time()
-            generation_time = end_time - start_time
-            
-            # Получаем данные о токенах и стоимости
-            # Используем общие счетчики вместо данных о последнем запросе
-            tokens = token_counter.total_tokens
-            cost = token_counter.total_cost
-            
-            # В этом примере мы заглушаем данные о чанках
-            # В реальной системе здесь должна быть логика получения использованных чанков
-            chunks = ["demo_chunk_1", "demo_chunk_2"]
-            
-            # Выводим информацию о результате теста
-            print("\n" + "="*70)
-            print(f"Вопрос: {question}")
-            print("-"*70)
-            print(f"Ответ: {response}")
-            print("-"*70)
-            print(f"Метрики:")
-            print(f"  Токены: {tokens}")
-            print(f"  Стоимость: ${cost:.6f}")
-            print(f"  Время генерации: {generation_time:.2f} сек.")
-            print("="*70 + "\n")
-            
-            # Запрашиваем оценку от тестировщика
-            while True:
-                try:
-                    score_input = input("Оцените ответ от -2 до +2 (-2, -1, 0, +1, +2): ")
-                    score = int(score_input)
-                    if -2 <= score <= 2:
-                        break
-                    print("Оценка должна быть целым числом от -2 до +2!")
-                except ValueError:
-                    print("Пожалуйста, введите целое число!")
-            
-            # Запрашиваем комментарий
-            comment = input("Введите комментарий к оценке: ")
-            
-            # Получаем текущую дату и время для записи в таблицу
-            current_datetime = datetime.now()
-            current_date = current_datetime.strftime("%Y-%m-%d")
-            current_time = current_datetime.strftime("%H:%M:%S")
-            
-            # Сохраняем результат в БД
-            log_test_result(
-                tester_id=tester_id,
-                question=question,
-                answer=response,
-                score=score,
-                tokens=tokens,
-                comment=comment,
-                generation_time=generation_time,
-                cost=cost,
-                chunks=chunks
-            )
-            
-            # Сохраняем результат в файл, если он указан
-            if self.output_file:
-                # Добавляем дату и время в начало данных
-                row_data = [
-                    current_date,  # Дата
-                    current_time,  # Время
-                    question, 
-                    response, 
-                    score, 
-                    tokens, 
-                    comment, 
-                    f"{generation_time:.2f}", 
-                    f"{cost:.6f}", 
-                    json.dumps(chunks, ensure_ascii=False)
-                ]
+            # Получаем ответ от модели
+            try:
+                system_content = LEARNING_ASSISTANT_PROMPT
                 
-                if self.file_format == 'xlsx':
-                    # Для Excel нужно прочитать существующие данные и добавить новую строку
+                # Формируем сообщения для запроса
+                messages = [{"role": "user", "content": question}]
+                
+                # Получаем ответ с информацией о чанках, используя новую функцию
+                from bot import get_gpt_response_with_chunks
+                response, chunks = await get_gpt_response_with_chunks(
+                    messages=messages, 
+                    system_content=system_content,
+                    user_id=tester_id
+                )
+                
+                # Замеряем время окончания запроса
+                end_time = time.time()
+                generation_time = end_time - start_time
+                
+                # Получаем данные о токенах и стоимости
+                tokens = token_counter.total_tokens
+                cost = token_counter.total_cost
+                
+                # Выводим информацию о результате теста
+                print("\n" + "="*70)
+                print(f"Вопрос: {question}")
+                print("-"*70)
+                print(f"Ответ: {response}")
+                print("-"*70)
+                print(f"Метрики:")
+                print(f"  Токены: {tokens}")
+                print(f"  Стоимость: ${cost:.6f}")
+                print(f"  Время генерации: {generation_time:.2f} сек.")
+                print(f"  Использованные чанки: {chunks}")
+                print("="*70 + "\n")
+                
+                # Запрашиваем оценку от тестировщика
+                while True:
                     try:
-                        import xlsxwriter
-                        from openpyxl import load_workbook
-                        
-                        # Проверяем, существует ли файл
-                        if os.path.isfile(self.output_file):
-                            # Загружаем данные из существующего файла
-                            wb = load_workbook(self.output_file)
-                            ws = wb.active
+                        score_input = input("Оцените ответ от -2 до +2 (-2, -1, 0, +1, +2): ")
+                        score = int(score_input)
+                        if -2 <= score <= 2:
+                            break
+                        print("Оценка должна быть целым числом от -2 до +2!")
+                    except ValueError:
+                        print("Пожалуйста, введите целое число!")
+                
+                # Запрашиваем комментарий
+                comment = input("Введите комментарий к оценке: ")
+                
+                # Получаем текущую дату и время для записи в таблицу
+                current_datetime = datetime.now()
+                current_date = current_datetime.strftime("%Y-%m-%d")
+                current_time = current_datetime.strftime("%H:%M:%S")
+                
+                # Сохраняем результат в БД
+                log_test_result(
+                    tester_id=tester_id,
+                    question=question,
+                    answer=response,
+                    score=score,
+                    tokens=tokens,
+                    comment=comment,
+                    generation_time=generation_time,
+                    cost=cost,
+                    chunks=chunks
+                )
+                
+                # Сохраняем результат в файл, если он указан
+                if self.output_file:
+                    # Добавляем дату и время в начало данных
+                    row_data = [
+                        current_date,  # Дата
+                        current_time,  # Время
+                        question, 
+                        response, 
+                        score, 
+                        tokens, 
+                        comment, 
+                        f"{generation_time:.2f}", 
+                        f"{cost:.6f}", 
+                        json.dumps(chunks, ensure_ascii=False)
+                    ]
+                    
+                    if self.file_format == 'xlsx':
+                        # Для Excel нужно прочитать существующие данные и добавить новую строку
+                        try:
+                            import xlsxwriter
+                            from openpyxl import load_workbook
                             
-                            # Собираем все существующие данные
-                            existing_data = []
-                            for row in ws.iter_rows(min_row=2, values_only=True):
-                                existing_data.append(list(row))
-                            
-                            # Добавляем новые данные
-                            existing_data.append(row_data)
-                            
-                            # Сохраняем в новый Excel-файл с форматированием
-                            save_to_excel(self.output_file, existing_data, self.headers)
-                        else:
-                            # Создаем новый файл с одной строкой данных
-                            save_to_excel(self.output_file, [row_data], self.headers)
-                            
-                    except ImportError:
-                        self.logger.error("Для работы с Excel требуется установить библиотеки xlsxwriter и openpyxl")
-                        print("Для работы с Excel требуется установить библиотеки: pip install xlsxwriter openpyxl")
-                        # Сохраняем в CSV как запасной вариант
+                            # Проверяем, существует ли файл
+                            if os.path.isfile(self.output_file):
+                                # Загружаем данные из существующего файла
+                                wb = load_workbook(self.output_file)
+                                ws = wb.active
+                                
+                                # Собираем все существующие данные
+                                existing_data = []
+                                for row in ws.iter_rows(min_row=2, values_only=True):
+                                    existing_data.append(list(row))
+                                
+                                # Добавляем новые данные
+                                existing_data.append(row_data)
+                                
+                                # Сохраняем в новый Excel-файл с форматированием
+                                save_to_excel(self.output_file, existing_data, self.headers)
+                            else:
+                                # Создаем новый файл с одной строкой данных
+                                save_to_excel(self.output_file, [row_data], self.headers)
+                                
+                        except ImportError:
+                            self.logger.error("Для работы с Excel требуется установить библиотеки xlsxwriter и openpyxl")
+                            print("Для работы с Excel требуется установить библиотеки: pip install xlsxwriter openpyxl")
+                            # Сохраняем в CSV как запасной вариант
+                            import csv
+                            with open(self.output_file.replace('.xlsx', '.csv'), mode="a", newline="", encoding="utf-8") as f:
+                                writer = csv.writer(f)
+                                writer.writerow(row_data)
+                                self.logger.info(f"Результаты сохранены в CSV (запасной вариант): {self.output_file.replace('.xlsx', '.csv')}")
+                    else:
+                        # CSV формат (как было раньше)
                         import csv
-                        with open(self.output_file.replace('.xlsx', '.csv'), mode="a", newline="", encoding="utf-8") as f:
+                        with open(self.output_file, mode="a", newline="", encoding="utf-8") as f:
                             writer = csv.writer(f)
                             writer.writerow(row_data)
-                            self.logger.info(f"Результаты сохранены в CSV (запасной вариант): {self.output_file.replace('.xlsx', '.csv')}")
-                else:
-                    # CSV формат (как было раньше)
-                    import csv
-                    with open(self.output_file, mode="a", newline="", encoding="utf-8") as f:
-                        writer = csv.writer(f)
-                        writer.writerow(row_data)
-            
-            self.logger.info(f"Тест завершен. Оценка: {score}")
-            return {
-                "date": current_date,
-                "time": current_time,
-                "question": question,
-                "answer": response,
-                "score": score,
-                "tokens": tokens,
-                "comment": comment,
-                "generation_time": generation_time,
-                "cost": cost,
-                "chunks": chunks
-            }
-            
+                
+                self.logger.info(f"Тест завершен. Оценка: {score}")
+                return {
+                    "date": current_date,
+                    "time": current_time,
+                    "question": question,
+                    "answer": response,
+                    "score": score,
+                    "tokens": tokens,
+                    "comment": comment,
+                    "generation_time": generation_time,
+                    "cost": cost,
+                    "chunks": chunks
+                }
+                
+            except Exception as e:
+                self.logger.error(f"Ошибка при проведении теста: {str(e)}")
+                print(f"Произошла ошибка: {str(e)}")
+                return None
+                
         except Exception as e:
-            self.logger.error(f"Ошибка при проведении теста: {str(e)}")
+            self.logger.error(f"Общая ошибка при проведении теста: {str(e)}")
             print(f"Произошла ошибка: {str(e)}")
             return None
     
@@ -423,122 +423,79 @@ class TestTable:
             self.logger.error(f"Ошибка при проведении тестов из файла: {str(e)}")
             print(f"Произошла ошибка: {str(e)}")
             return []
-    
+
     @staticmethod
     def export_results(output_file: str = "test_results.csv"):
         """
-        Экспортирует все результаты тестов из базы данных в файл (CSV или Excel).
+        Экспортирует результаты тестов из базы данных в файл.
         
         Args:
-            output_file: Путь к файлу для экспорта
+            output_file: Путь к файлу для экспорта (по умолчанию "test_results.csv")
         """
         try:
-            # Определяем формат по расширению
+            from utils.database import get_test_results
+            
+            # Получаем результаты из базы данных
+            results = get_test_results()
+            
+            if not results:
+                print("Нет результатов тестирования для экспорта.")
+                return
+            
+            # Определяем формат файла
             file_format = detect_file_format(output_file)
             
             if file_format == 'xlsx':
-                # Для Excel нужно использовать нашу функцию с форматированием
-                # Получаем данные из БД
-                from utils.database import get_test_results
-                results = get_test_results(limit=1000)
-                
-                if not results:
-                    logger.warning(f"Нет результатов тестирования для экспорта")
-                    print("Нет результатов тестирования для экспорта.")
-                    return
-                
-                # Подготавливаем заголовки и данные с новыми столбцами
-                headers = [
-                    "Дата", "Время",  # Новые столбцы
-                    "ID", "ID тестировщика", "Вопрос", "Ответ", 
-                    "Оценка", "Токены", "Комментарий", "Время генерации (сек)", 
-                    "Стоимость", "Чанки"
-                ]
-                
-                data = []
-                for result in results:
-                    # Разделяем timestamp на дату и время
-                    timestamp = datetime.fromisoformat(result['timestamp'])
-                    date_str = timestamp.strftime("%Y-%m-%d")
-                    time_str = timestamp.strftime("%H:%M:%S")
-                    
-                    data.append([
-                        date_str,  # Дата
-                        time_str,  # Время
-                        result['id'],
-                        result['tester_id'],
-                        result['question'],
-                        result['answer'],
-                        result['score'],
-                        result['tokens'],
-                        result['comment'],
-                        result['generation_time'],
-                        result['cost'],
-                        json.dumps(result['chunks'], ensure_ascii=False)
-                    ])
-                
-                # Сохраняем в Excel
-                save_to_excel(output_file, data, headers)
-                print(f"Результаты тестирования экспортированы в Excel-файл: {output_file}")
-            else:
-                # Для CSV модифицируем существующую функцию
-                from utils.database import get_test_results
-                results = get_test_results(limit=1000)
-                
-                if not results:
-                    logger.warning(f"Нет результатов тестирования для экспорта")
-                    print("Нет результатов тестирования для экспорта.")
-                    return
-                
-                # Записываем данные в CSV с разделенными столбцами даты и времени
-                import csv
-                with open(output_file, mode='w', newline='', encoding='utf-8') as file:
-                    writer = csv.writer(file)
-                    
-                    # Записываем заголовки
+                # Экспорт в Excel
+                try:
+                    # Подготавливаем данные для Excel
                     headers = [
-                        "Дата", "Время",  # Новые столбцы
-                        "ID", "ID тестировщика", "Вопрос", "Ответ", 
+                        "ID", "Дата", "Время", "Тестировщик ID", "Вопрос", "Ответ", 
                         "Оценка", "Токены", "Комментарий", "Время генерации (сек)", 
-                        "Стоимость", "Чанки"
+                        "Стоимость ($)", "Использованные чанки"
                     ]
-                    writer.writerow(headers)
                     
-                    # Записываем данные
+                    data = []
                     for result in results:
-                        # Разделяем timestamp на дату и время
-                        timestamp = datetime.fromisoformat(result['timestamp'])
-                        date_str = timestamp.strftime("%Y-%m-%d")
-                        time_str = timestamp.strftime("%H:%M:%S")
-                        
-                        writer.writerow([
-                            date_str,  # Дата
-                            time_str,  # Время
-                            result['id'],
-                            result['tester_id'],
-                            result['question'],
-                            result['answer'],
-                            result['score'],
-                            result['tokens'],
-                            result['comment'],
-                            result['generation_time'],
-                            result['cost'],
-                            json.dumps(result['chunks'], ensure_ascii=False)
-                        ])
-                
-                print(f"Результаты тестирования экспортированы в CSV-файл: {output_file}")
+                        row = [
+                            result[0],  # id
+                            result[1],  # date
+                            result[2],  # time
+                            result[3],  # tester_id
+                            result[4],  # question
+                            result[5],  # answer
+                            result[6],  # score
+                            result[7],  # tokens
+                            result[8],  # comment
+                            result[9],  # generation_time
+                            result[10], # cost
+                            result[11]  # chunks
+                        ]
+                        data.append(row)
+                    
+                    save_to_excel(output_file, data, headers)
+                    print(f"Результаты экспортированы в Excel файл: {output_file}")
+                    
+                except ImportError:
+                    print("Для экспорта в Excel требуется установить библиотеку xlsxwriter")
+                    # Экспортируем в CSV как запасной вариант
+                    csv_file = output_file.replace('.xlsx', '.csv')
+                    export_test_results_to_csv(csv_file)
+                    print(f"Результаты экспортированы в CSV файл (запасной вариант): {csv_file}")
+            else:
+                # Экспорт в CSV
+                export_test_results_to_csv(output_file)
+                print(f"Результаты экспортированы в CSV файл: {output_file}")
                 
         except Exception as e:
-            logger.error(f"Ошибка при экспорте результатов: {str(e)}")
-            print(f"Ошибка при экспорте: {str(e)}")
-    
-    # Оставляем для обратной совместимости
+            print(f"Ошибка при экспорте результатов: {str(e)}")
+
     @staticmethod
     def export_to_csv(output_file: str = "test_results.csv"):
         """
-        Экспортирует все результаты тестов из базы данных в CSV-файл.
+        Экспортирует результаты тестов из базы данных в CSV файл.
         
         Args:
-            output_file: Путь к CSV-файлу для экспорта
+            output_file: Путь к CSV файлу для экспорта (по умолчанию "test_results.csv")
         """
         TestTable.export_results(output_file) 
