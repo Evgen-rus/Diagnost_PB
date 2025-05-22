@@ -7,6 +7,8 @@
 3. Экспорт результатов: python test_runner.py --export results.csv
 4. Для сохранения в Excel используйте расширение .xlsx:
    python test_runner.py --question "Ваш вопрос" --output results.xlsx
+5. Для отключения векторного поиска:
+   python test_runner.py --question "Ваш вопрос" --no-vector-search
 """
 import os
 import sys
@@ -46,8 +48,27 @@ async def run_tests():
     group.add_argument("--export", "-e", type=str, help="Экспорт результатов в CSV или Excel (.xlsx)")
     parser.add_argument("--output", "-o", type=str, help="Файл для сохранения результатов (.csv или .xlsx)", default="test_results.xlsx")
     parser.add_argument("--tester", "-t", type=int, help="ID тестировщика", default=999)
+    parser.add_argument("--no-vector-search", action="store_true", help="Отключить векторный поиск при тестировании")
     
     args = parser.parse_args()
+    
+    # Инициализируем векторное хранилище FAISS, если не указан флаг --no-vector-search
+    if not args.no_vector_search:
+        try:
+            from utils.vector_search import FAISSVectorStore
+            import bot
+            bot.vector_store = FAISSVectorStore(embedding_dimension=1536)
+            logger.info("Векторное хранилище FAISS инициализировано для тестирования")
+            print("Векторное хранилище FAISS инициализировано для тестирования")
+        except Exception as e:
+            logger.error(f"Ошибка при инициализации векторного хранилища: {str(e)}")
+            print(f"Ошибка при инициализации векторного хранилища: {str(e)}")
+    else:
+        logger.info("Векторный поиск отключен")
+        print("Векторный поиск отключен")
+        # Устанавливаем vector_store в None, чтобы отключить векторный поиск
+        import bot
+        bot.vector_store = None
     
     # Создаем экземпляр тестировщика
     test_table = TestTable(output_csv=args.output)
