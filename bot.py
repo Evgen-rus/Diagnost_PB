@@ -15,6 +15,8 @@ from utils.session_cleaner import update_user_activity, start_cleaner
 import datetime
 import re  # Добавляем импорт модуля регулярных выражений
 from prompts import LEARNING_ASSISTANT_PROMPT, INSTRUCTION, WELCOME_MESSAGE, FIRST_QUESTION_PROMPT
+import sqlite3
+from utils.vector_search import FAISSVectorStore, get_context_for_query, augment_prompt_with_context
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -27,6 +29,9 @@ dp = Dispatcher(storage=storage)
 # Инициализация OpenAI клиента
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
+
+# Инициализация векторного хранилища
+vector_store = None
 
 # Определение состояний диалога
 class BotStates(StatesGroup):
@@ -307,13 +312,15 @@ async def get_gpt_response(messages, system_content, additional_system_content=N
     
     Формирует запрос к модели GPT на основе истории сообщений, системного промпта
     и дополнительного контекста, отправляет запрос и обрабатывает полученный ответ.
+    Использует векторный поиск для обогащения контекста релевантной информацией.
     
     Действия:
     1. Создает контекстный логгер для GPT запросов
-    2. Формирует сообщения для API с системным промптом и историей диалога
-    3. Отправляет запрос к выбранной модели OpenAI
-    4. Обрабатывает ответ, конвертируя Markdown в HTML
-    5. Учитывает токены и стоимость запроса
+    2. Получает контекст из базы знаний с помощью векторного поиска
+    3. Формирует сообщения для API с системным промптом и историей диалога
+    4. Отправляет запрос к выбранной модели OpenAI
+    5. Обрабатывает ответ, конвертируя Markdown в HTML
+    6. Учитывает токены и стоимость запроса
     
     Args:
         messages (list): История сообщений диалога в формате [{role: str, content: str}, ...]
@@ -347,11 +354,41 @@ async def get_gpt_response(messages, system_content, additional_system_content=N
         # Формируем сообщения для API
         api_messages = []
         
+        # Получаем последнее сообщение пользователя для поиска контекста
+        user_query = ""
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                user_query = msg.get("content", "")
+                break
+        
+        # Получаем контекст из базы знаний с помощью векторного поиска
+        knowledge_context = ""
+        if vector_store and user_query:
+            try:
+                # Подключаемся к базе данных
+                conn = sqlite3.connect(os.path.join(os.getcwd(), 'knowledge_base_v2.db'))
+                
+                # Получаем контекст для запроса
+                gpt_logger.info(f"Поиск релевантного контекста для запроса: {user_query[:50]}...")
+                knowledge_context = get_context_for_query(user_query, vector_store, conn, top_k=3, max_tokens=1000)
+                
+                # Закрываем соединение с базой данных
+                conn.close()
+                
+                gpt_logger.info(f"Получен контекст размером {len(knowledge_context)} символов")
+            except Exception as e:
+                gpt_logger.error(f"Ошибка при получении контекста: {str(e)}")
+        
+        # Дополняем системное сообщение контекстом
+        enhanced_system_content = system_content
+        if knowledge_context:
+            enhanced_system_content = augment_prompt_with_context(system_content, knowledge_context)
+        
         # Добавляем системное сообщение
         if additional_system_content:
-            api_messages.append({"role": "system", "content": system_content + "\n\n" + additional_system_content})
+            api_messages.append({"role": "system", "content": enhanced_system_content + "\n\n" + additional_system_content})
         else:
-            api_messages.append({"role": "system", "content": system_content})
+            api_messages.append({"role": "system", "content": enhanced_system_content})
         
         # Добавляем историю диалога
         for msg in messages:
@@ -378,10 +415,6 @@ async def get_gpt_response(messages, system_content, additional_system_content=N
         # Заменяем Markdown на HTML (** на <b>)
         response_text = convert_markdown_to_html(response_text)
         gpt_logger.info("Постобработка: Markdown заменен на HTML")
-        
-        # Логируем ответ от GPT - ТОЛЬКО один раз
-        # Удаляем дублирующий лог:
-        # log_bot_response(user_id, f"[RAW GPT RESPONSE] {response_text}")
         
         # Считаем токены
         token_counter.log_tokens_usage(
@@ -454,9 +487,10 @@ async def main():
     Действия:
     1. Инициализирует общий логгер для отслеживания старта бота
     2. Инициализирует базу данных SQLite для логирования
-    3. Запускает процесс очистки неактивных сессий
-    4. Устанавливает команды меню бота в интерфейсе Telegram
-    5. Запускает поллинг для обработки сообщений
+    3. Инициализирует векторное хранилище FAISS
+    4. Запускает процесс очистки неактивных сессий
+    5. Устанавливает команды меню бота в интерфейсе Telegram
+    6. Запускает поллинг для обработки сообщений
     
     Args:
         Нет аргументов
@@ -476,6 +510,14 @@ async def main():
         logger.info("База данных SQLite инициализирована")
     except Exception as e:
         logger.error(f"Ошибка при инициализации базы данных: {str(e)}")
+    
+    # Инициализируем векторное хранилище FAISS
+    try:
+        global vector_store
+        vector_store = FAISSVectorStore(embedding_dimension=1536)
+        logger.info("Векторное хранилище FAISS инициализировано")
+    except Exception as e:
+        logger.error(f"Ошибка при инициализации векторного хранилища: {str(e)}")
     
     # Запускаем процесс очистки неактивных сессий в фоновом режиме
     try:
