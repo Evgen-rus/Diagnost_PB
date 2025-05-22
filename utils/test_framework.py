@@ -115,7 +115,9 @@ def save_to_excel(file_path: str, data: List[List[Any]], headers: List[str]) -> 
             6: 30,  # Комментарий
             7: 12,  # Время генерации
             8: 12,  # Цена
-            9: 30   # Чанки
+            9: 50,  # Чанк 1
+            10: 50, # Чанк 2
+            11: 50  # Чанк 3
         }
         
         for col, width in column_widths.items():
@@ -165,7 +167,7 @@ class TestTable:
             # Заголовки для таблицы с добавлением даты и времени
             self.headers = [
                 "Дата", "Время", "Вопрос", "Ответ", "Оценка", "Токены", "Комментарий", 
-                "Время генерации", "Цена $", "Чанки"
+                "Время генерации", "Цена $", "Чанк 1", "Чанк 2", "Чанк 3"
             ]
             
             # Проверяем, существует ли директория для файла
@@ -242,7 +244,11 @@ class TestTable:
                 print(f"  Токены: {tokens}")
                 print(f"  Стоимость: ${cost:.6f}")
                 print(f"  Время генерации: {generation_time:.2f} сек.")
-                print(f"  Использованные чанки: {chunks}")
+                if chunks:
+                    chunk_ids = [chunk.get('id', 'unknown') if isinstance(chunk, dict) else str(chunk) for chunk in chunks]
+                    print(f"  Использованные чанки: {', '.join(chunk_ids)}")
+                else:
+                    print("  Чанки не использовались")
                 print("="*70 + "\n")
                 
                 # Запрашиваем оценку от тестировщика
@@ -279,7 +285,14 @@ class TestTable:
                 
                 # Сохраняем результат в файл, если он указан
                 if self.output_file:
-                    # Добавляем дату и время в начало данных
+                    # Формируем данные для 3 столбцов чанков
+                    chunk_columns = ["", "", ""]  # По умолчанию пустые
+                    if chunks:
+                        for i, chunk in enumerate(chunks[:3]):  # Максимум 3 чанка
+                            if isinstance(chunk, dict):
+                                chunk_text = f"{chunk.get('id', 'unknown')}\n{chunk.get('relevance', 0.0)}\n{chunk.get('content', '')}"
+                                chunk_columns[i] = chunk_text
+                    
                     row_data = [
                         current_date,  # Дата
                         current_time,  # Время
@@ -290,7 +303,9 @@ class TestTable:
                         comment, 
                         f"{generation_time:.2f}", 
                         f"{cost:.6f}", 
-                        json.dumps(chunks, ensure_ascii=False)
+                        chunk_columns[0],  # Чанк 1
+                        chunk_columns[1],  # Чанк 2
+                        chunk_columns[2]   # Чанк 3
                     ]
                     
                     if self.file_format == 'xlsx':
@@ -452,7 +467,7 @@ class TestTable:
                     headers = [
                         "ID", "Дата", "Время", "Тестировщик ID", "Вопрос", "Ответ", 
                         "Оценка", "Токены", "Комментарий", "Время генерации (сек)", 
-                        "Стоимость ($)", "Использованные чанки"
+                        "Стоимость ($)", "Чанк 1", "Чанк 2", "Чанк 3"
                     ]
                     
                     data = []
@@ -469,7 +484,9 @@ class TestTable:
                             result[8],  # comment
                             result[9],  # generation_time
                             result[10], # cost
-                            result[11]  # chunks
+                            result[11], # chunk 1
+                            result[12], # chunk 2
+                            result[13]  # chunk 3
                         ]
                         data.append(row)
                     

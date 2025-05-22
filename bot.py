@@ -481,8 +481,15 @@ async def get_gpt_response_with_chunks(messages, system_content, additional_syst
                 # Получаем чанки с информацией об их ID
                 relevant_chunks = search_relevant_chunks(user_query, vector_store, conn, top_k=3)
                 
-                # Извлекаем ID чанков
-                used_chunks = [str(chunk.get('chunk_id', chunk.get('id', 'unknown'))) for chunk in relevant_chunks]
+                # Формируем информацию о чанках с релевантностью
+                used_chunks = []
+                for chunk in relevant_chunks:
+                    chunk_info = {
+                        'id': str(chunk.get('chunk_id', chunk.get('id', 'unknown'))),
+                        'content': chunk.get('text', chunk.get('content', '')),
+                        'relevance': round(1.0 - chunk.get('distance', 1.0), 4)
+                    }
+                    used_chunks.append(chunk_info)
                 
                 # Формируем контекст из найденных чанков
                 context_parts = []
