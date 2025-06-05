@@ -650,8 +650,9 @@ async def main():
     # Инициализируем векторное хранилище FAISS
     try:
         global vector_store
-        vector_store = FAISSVectorStore(embedding_dimension=1536)
-        logger.info("Векторное хранилище FAISS инициализировано")
+        # ВРЕМЕННО ОТКЛЮЧЕН ВЕКТОРНЫЙ ПОИСК
+        vector_store = None  # Раньше было: FAISSVectorStore(embedding_dimension=1536)
+        logger.info("Векторное хранилище ОТКЛЮЧЕНО (vector_store = None)")
     except Exception as e:
         logger.error(f"Ошибка при инициализации векторного хранилища: {str(e)}")
     
