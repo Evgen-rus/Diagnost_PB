@@ -11,6 +11,7 @@ import sqlite3
 import sys
 from dotenv import load_dotenv
 from utils.vector_search import FAISSVectorStore, get_context_for_query, search_relevant_chunks
+from config import EMBEDDING_DIMENSION
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -38,7 +39,7 @@ def test_vector_search():
     
     # Проверяем FAISS индекс
     try:
-        vector_store = FAISSVectorStore(embedding_dimension=1536)
+        vector_store = FAISSVectorStore(embedding_dimension=EMBEDDING_DIMENSION)
         if not vector_store.load_index():
             print("❌ FAISS индекс не найден!")
             print("💡 Запустите: python build_faiss_index.py")
@@ -84,7 +85,7 @@ def test_vector_search():
         
         try:
             # Поиск релевантных чанков
-            relevant_chunks = search_relevant_chunks(query, vector_store, conn, top_k=3)
+            relevant_chunks = search_relevant_chunks(query, vector_store, conn)
             
             if not relevant_chunks:
                 print("❌ Не найдено релевантных результатов")
@@ -128,7 +129,7 @@ def test_vector_search():
                 continue
             
             # Получаем контекст
-            context = get_context_for_query(user_query, vector_store, conn, top_k=3, max_tokens=1000)
+            context = get_context_for_query(user_query, vector_store, conn)
             
             if context:
                 print(f"\n📄 Найденный контекст ({len(context)} символов):")

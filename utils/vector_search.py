@@ -12,6 +12,7 @@ import sqlite3
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 from openai import OpenAI
+from config import DEFAULT_TOP_K, MAX_CONTEXT_TOKENS, EMBEDDING_DIMENSION
 
 # Настраиваем логгер для модуля векторного поиска
 vector_logger = logging.getLogger('vector_search')
@@ -99,7 +100,7 @@ class FAISSVectorStore:
     Обеспечивает создание, сохранение, загрузку и поиск в индексе FAISS.
     """
     
-    def __init__(self, embedding_dimension: int = 1536, index_file_path: str = INDEX_FILE_PATH):
+    def __init__(self, embedding_dimension: int = EMBEDDING_DIMENSION, index_file_path: str = INDEX_FILE_PATH):
         """
         Инициализация хранилища FAISS.
         
@@ -273,13 +274,13 @@ class FAISSVectorStore:
             vector_logger.info(f"Создан новый индекс с размерностью {self.embedding_dimension}")
             return False
     
-    def search(self, query_vector: List[float], top_k: int = 5) -> Tuple[np.ndarray, np.ndarray]:
+    def search(self, query_vector: List[float], top_k: int = DEFAULT_TOP_K) -> Tuple[np.ndarray, np.ndarray]:
         """
         Поиск ближайших соседей для вектора запроса.
         
         Args:
             query_vector: Вектор запроса
-            top_k: Количество ближайших соседей для поиска (по умолчанию 5)
+            top_k: Количество ближайших соседей для поиска (по умолчанию DEFAULT_TOP_K)
             
         Returns:
             Кортеж (distances, indices), где:
@@ -383,7 +384,7 @@ def get_chunks_by_ids(conn: sqlite3.Connection, chunk_ids: List[str]) -> List[Di
     
     return chunks
 
-def search_relevant_chunks(query: str, vector_store: FAISSVectorStore, conn: sqlite3.Connection, top_k: int = 5) -> List[Dict]:
+def search_relevant_chunks(query: str, vector_store: FAISSVectorStore, conn: sqlite3.Connection, top_k: int = DEFAULT_TOP_K) -> List[Dict]:
     """
     Поиск релевантных чанков для запроса.
     
@@ -391,7 +392,7 @@ def search_relevant_chunks(query: str, vector_store: FAISSVectorStore, conn: sql
         query: Текстовый запрос
         vector_store: Экземпляр класса FAISSVectorStore
         conn: Соединение с базой данных SQLite
-        top_k: Количество релевантных чанков для поиска (по умолчанию 5)
+        top_k: Количество релевантных чанков для поиска (по умолчанию DEFAULT_TOP_K)
         
     Returns:
         Список словарей с информацией о релевантных чанках
@@ -421,16 +422,16 @@ def search_relevant_chunks(query: str, vector_store: FAISSVectorStore, conn: sql
     
     return chunks
 
-def get_context_for_query(query: str, vector_store: FAISSVectorStore, conn: sqlite3.Connection, top_k: int = 5, max_tokens: int = 2000) -> str:
+def get_context_for_query(query: str, vector_store: FAISSVectorStore, conn: sqlite3.Connection, top_k: int = DEFAULT_TOP_K, max_tokens: int = MAX_CONTEXT_TOKENS) -> str:
     """
     Подготовка контекста для запроса GPT на основе найденных чанков.
     
-    Args:
-        query: Текстовый запрос
-        vector_store: Экземпляр класса FAISSVectorStore
-        conn: Соединение с базой данных SQLite
-        top_k: Количество релевантных чанков для поиска (по умолчанию 5)
-        max_tokens: Максимальное количество токенов для контекста (по умолчанию 2000)
+            Args:
+            query: Текстовый запрос
+            vector_store: Экземпляр класса FAISSVectorStore
+            conn: Соединение с базой данных SQLite
+            top_k: Количество релевантных чанков для поиска (по умолчанию DEFAULT_TOP_K)
+            max_tokens: Максимальное количество токенов для контекста (по умолчанию MAX_CONTEXT_TOKENS)
         
     Returns:
         Строка с контекстом, сформированная из найденных чанков

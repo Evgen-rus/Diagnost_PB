@@ -17,6 +17,7 @@ import re  # Добавляем импорт модуля регулярных �
 from prompts import LEARNING_ASSISTANT_PROMPT, INSTRUCTION, WELCOME_MESSAGE, FIRST_QUESTION_PROMPT
 import sqlite3
 from utils.vector_search import FAISSVectorStore, get_context_for_query, augment_prompt_with_context
+from config import EMBEDDING_DIMENSION
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -370,7 +371,7 @@ async def get_gpt_response(messages, system_content, additional_system_content=N
                 
                 # Получаем контекст для запроса
                 gpt_logger.info(f"Поиск релевантного контекста для запроса: {user_query[:50]}...")
-                knowledge_context = get_context_for_query(user_query, vector_store, conn, top_k=3, max_tokens=1000)
+                knowledge_context = get_context_for_query(user_query, vector_store, conn)
                 
                 # Закрываем соединение с базой данных
                 conn.close()
@@ -514,7 +515,7 @@ async def main():
     # Инициализируем векторное хранилище FAISS
     try:
         global vector_store
-        vector_store = FAISSVectorStore(embedding_dimension=1536)
+        vector_store = FAISSVectorStore(embedding_dimension=EMBEDDING_DIMENSION)
         # Пытаемся загрузить существующий индекс
         if vector_store.load_index():
             logger.info("Векторное хранилище FAISS успешно загружено")

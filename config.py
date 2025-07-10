@@ -26,6 +26,11 @@ try:
     OPENAI_API_KEY = get_env_var("OPENAI_API_KEY")
     OPENAI_MODEL = get_env_var("OPENAI_MODEL", required=False, default="gpt-4.1-nano")
     
+    # Vector search configuration
+    DEFAULT_TOP_K = 3  # Количество чанков для поиска по умолчанию
+    MAX_CONTEXT_TOKENS = 1000  # Максимальное количество токенов для контекста
+    EMBEDDING_DIMENSION = 1536  # Размерность эмбеддингов OpenAI text-embedding-3-small
+    
     logger.info("Конфигурация успешно загружена")
 
 except Exception as e:
