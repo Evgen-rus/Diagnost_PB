@@ -151,7 +151,7 @@ class FAISSVectorStore:
         
         # Получаем все чанки из базы данных
         # Адаптируем запрос к существующей структуре таблицы
-        cursor.execute("SELECT chunk_id, text FROM chunks")
+        cursor.execute("SELECT chunk_id, chunk_text FROM chunks")
         chunks = cursor.fetchall()
         
         if not chunks:
@@ -248,17 +248,30 @@ class FAISSVectorStore:
     def load_index(self):
         """
         Загрузка индекса из файла.
+        
+        Returns:
+            bool: True если индекс успешно загружен, False в случае ошибки
         """
         try:
+            # Проверяем существование файла индекса
+            if not os.path.exists(self.index_file_path):
+                vector_logger.warning(f"Файл индекса не найден: {self.index_file_path}")
+                # Создаем новый индекс
+                self.index = faiss.IndexFlatL2(self.embedding_dimension)
+                vector_logger.info(f"Создан новый индекс с размерностью {self.embedding_dimension}")
+                return False
+            
             # Загружаем индекс FAISS
             self.index = faiss.read_index(self.index_file_path)
             vector_logger.info(f"Индекс загружен из {self.index_file_path}. Всего векторов: {self.index.ntotal}")
+            return True
             
         except Exception as e:
             vector_logger.error(f"Ошибка при загрузке индекса: {str(e)}")
             # Создаем новый индекс в случае ошибки
             self.index = faiss.IndexFlatL2(self.embedding_dimension)
             vector_logger.info(f"Создан новый индекс с размерностью {self.embedding_dimension}")
+            return False
     
     def search(self, query_vector: List[float], top_k: int = 5) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -353,10 +366,12 @@ def get_chunks_by_ids(conn: sqlite3.Connection, chunk_ids: List[str]) -> List[Di
             # Добавляем поля, ожидаемые в коде, для совместимости
             if 'chunk_id' in chunk:
                 chunk['id'] = chunk['chunk_id']
-            if 'text' in chunk:
-                chunk['content'] = chunk['text']
-            if 'doc_id' in chunk:
-                chunk['document_title'] = chunk['doc_id']
+            if 'chunk_text' in chunk:
+                chunk['content'] = chunk['chunk_text']
+                chunk['text'] = chunk['chunk_text']  # Для обратной совместимости
+            if 'document_id' in chunk:
+                chunk['doc_id'] = chunk['document_id']
+                chunk['document_title'] = chunk['document_id']
                 
             chunks.append(chunk)
         
@@ -428,10 +443,10 @@ def get_context_for_query(query: str, vector_store: FAISSVectorStore, conn: sqli
     
     for chunk in chunks:
         # Добавляем информацию о документе
-        document_info = f"Документ: {chunk.get('doc_id', chunk.get('document_title', 'Неизвестный документ'))}"
+        document_info = f"Документ: {chunk.get('doc_id', chunk.get('document_title', chunk.get('document_id', 'Неизвестный документ')))}"
         
         # Добавляем содержимое чанка
-        content = chunk.get('text', chunk.get('content', ''))
+        content = chunk.get('chunk_text', chunk.get('text', chunk.get('content', '')))
         
         # Формируем полное описание чанка
         chunk_text = f"{document_info}\n\n{content}\n\n"

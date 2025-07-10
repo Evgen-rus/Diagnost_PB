@@ -16,7 +16,7 @@ import datetime
 import re  # Добавляем импорт модуля регулярных выражений
 from prompts import LEARNING_ASSISTANT_PROMPT, INSTRUCTION, WELCOME_MESSAGE, FIRST_QUESTION_PROMPT
 import sqlite3
-from utils.vector_search import FAISSVectorStore, get_context_for_query, augment_prompt_with_context, search_relevant_chunks
+from utils.vector_search import FAISSVectorStore, get_context_for_query, augment_prompt_with_context
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -431,142 +431,6 @@ async def get_gpt_response(messages, system_content, additional_system_content=N
         gpt_logger.error(f"Ошибка при запросе к GPT: {str(e)}", exc_info=True)
         return "Произошла ошибка при обработке запроса. Пожалуйста, попробуйте еще раз или обратитесь к администратору."
 
-async def get_gpt_response_with_chunks(messages, system_content, additional_system_content=None, user_id=0):
-    """
-    Получение ответа от GPT через OpenAI API с информацией о использованных чанках.
-    
-    Аналогична функции get_gpt_response, но дополнительно возвращает информацию
-    о чанках, которые были использованы для обогащения контекста.
-    
-    Args:
-        messages (list): История сообщений диалога в формате [{role: str, content: str}, ...]
-        system_content (str): Системный промпт для модели
-        additional_system_content (str, optional): Дополнительная информация для системного промпта.
-        user_id (int, optional): ID пользователя для логирования. По умолчанию 0.
-        
-    Returns:
-        tuple: (response_text, used_chunks) где:
-            - response_text (str): Ответ от модели GPT после обработки
-            - used_chunks (list): Список ID чанков, использованных для контекста
-    """
-    try:
-        # Создаем контекстный логгер для GPT запросов
-        gpt_logger = get_user_logger(
-            user_id=user_id,
-            operation="gpt_request"
-        )
-        
-        gpt_logger.info("Формирование запроса к API с отслеживанием чанков")
-        # Формируем сообщения для API
-        api_messages = []
-        used_chunks = []
-        
-        # Получаем последнее сообщение пользователя для поиска контекста
-        user_query = ""
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                user_query = msg.get("content", "")
-                break
-        
-        # Получаем контекст из базы знаний с помощью векторного поиска
-        knowledge_context = ""
-        if vector_store and user_query:
-            try:
-                # Подключаемся к базе данных
-                conn = sqlite3.connect(os.path.join(os.getcwd(), 'knowledge_base_v2.db'))
-                
-                # Получаем релевантные чанки для запроса
-                gpt_logger.info(f"Поиск релевантного контекста для запроса: {user_query[:50]}...")
-                
-                # Получаем чанки с информацией об их ID
-                relevant_chunks = search_relevant_chunks(user_query, vector_store, conn, top_k=3)
-                
-                # Формируем информацию о чанках с релевантностью
-                used_chunks = []
-                for chunk in relevant_chunks:
-                    chunk_info = {
-                        'id': str(chunk.get('chunk_id', chunk.get('id', 'unknown'))),
-                        'content': chunk.get('text', chunk.get('content', '')),
-                        'relevance': round(1.0 - chunk.get('distance', 1.0), 4)
-                    }
-                    used_chunks.append(chunk_info)
-                
-                # Формируем контекст из найденных чанков
-                context_parts = []
-                for chunk in relevant_chunks:
-                    document_info = f"Документ: {chunk.get('doc_id', chunk.get('document_title', 'Неизвестный документ'))}"
-                    content = chunk.get('text', chunk.get('content', ''))
-                    chunk_text = f"{document_info}\n\n{content}\n\n"
-                    context_parts.append(chunk_text)
-                
-                if context_parts:
-                    knowledge_context = "--- КОНТЕКСТ ИЗ БАЗЫ ЗНАНИЙ ---\n\n" + "\n".join(context_parts) + "\n\n--- КОНЕЦ КОНТЕКСТА ---"
-                
-                # Закрываем соединение с базой данных
-                conn.close()
-                
-                gpt_logger.info(f"Получен контекст размером {len(knowledge_context)} символов из {len(used_chunks)} чанков")
-            except Exception as e:
-                gpt_logger.error(f"Ошибка при получении контекста: {str(e)}")
-        
-        # Дополняем системное сообщение контекстом
-        enhanced_system_content = system_content
-        if knowledge_context:
-            instruction = """
-            Выше представлен контекст из базы знаний, который может быть полезен для ответа на вопрос.
-            Если информация в контексте релевантна для ответа, используйте ее.
-            Если в контексте нет релевантной информации, отвечайте на основе своих знаний.
-            Важно: не упоминайте в ответе, что вы используете контекст, если пользователь явно не спрашивает об источниках.
-            """
-            enhanced_system_content = knowledge_context + "\n\n" + instruction + "\n\n" + system_content
-        
-        # Добавляем системное сообщение
-        if additional_system_content:
-            api_messages.append({"role": "system", "content": enhanced_system_content + "\n\n" + additional_system_content})
-        else:
-            api_messages.append({"role": "system", "content": enhanced_system_content})
-        
-        # Добавляем историю диалога
-        for msg in messages:
-            api_messages.append(msg)
-        
-        # Логируем токены с передачей ID пользователя
-        token_count = token_counter.log_tokens_usage(OPENAI_MODEL, api_messages, user_id=user_id)
-        gpt_logger.info(f"Использовано токенов: {token_count}")
-        
-        # Отправляем запрос к API
-        gpt_logger.info(f"Отправка запроса к модели {OPENAI_MODEL}")
-        response = await client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=api_messages,
-            temperature=0.3,
-            max_tokens=2000
-        )
-        
-        gpt_logger.info("Получен ответ от API")
-        
-        # Постобработка ответа
-        response_text = response.choices[0].message.content
-        
-        # Заменяем Markdown на HTML (** на <b>)
-        response_text = convert_markdown_to_html(response_text)
-        gpt_logger.info("Постобработка: Markdown заменен на HTML")
-        
-        # Считаем токены
-        token_counter.log_tokens_usage(
-            OPENAI_MODEL, 
-            messages,
-            response_text,
-            user_id
-        )
-        
-        return response_text, used_chunks
-        
-    except Exception as e:
-        gpt_logger = get_user_logger(user_id=user_id, operation="gpt_error")
-        gpt_logger.error(f"Ошибка при запросе к GPT: {str(e)}", exc_info=True)
-        return "Произошла ошибка при обработке запроса. Пожалуйста, попробуйте еще раз или обратитесь к администратору.", []
-
 def convert_markdown_to_html(text):
     """
     Преобразует Markdown разметку в HTML.
@@ -650,11 +514,16 @@ async def main():
     # Инициализируем векторное хранилище FAISS
     try:
         global vector_store
-        # ВРЕМЕННО ОТКЛЮЧЕН ВЕКТОРНЫЙ ПОИСК
-        vector_store = None  # Раньше было: FAISSVectorStore(embedding_dimension=1536)
-        logger.info("Векторное хранилище ОТКЛЮЧЕНО (vector_store = None)")
+        vector_store = FAISSVectorStore(embedding_dimension=1536)
+        # Пытаемся загрузить существующий индекс
+        if vector_store.load_index():
+            logger.info("Векторное хранилище FAISS успешно загружено")
+        else:
+            logger.warning("Векторный индекс не найден. Запустите build_faiss_index.py для создания индекса")
+            vector_store = None
     except Exception as e:
         logger.error(f"Ошибка при инициализации векторного хранилища: {str(e)}")
+        vector_store = None
     
     # Запускаем процесс очистки неактивных сессий в фоновом режиме
     try:
