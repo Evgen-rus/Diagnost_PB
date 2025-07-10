@@ -1,7 +1,6 @@
 # Credentials and environment
 credentials/
 .env
-*.json
 
 # Logs
 *.log
@@ -60,7 +59,7 @@ logs/*
 !logs/.gitkeep
 
 # Ignore all files in the data folder
-data/*
+# data/*
 
 # Keep the data folder itself
 !data/.gitkeep
@@ -69,8 +68,8 @@ data/*
 .cursor/
 
 # Database
-data/bot_dialogs.db
-knowledge_base_v2.db
+# data/bot_dialogs.db
+# knowledge_base_v2.db
 
 # Results test
 results/*
