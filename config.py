@@ -24,7 +24,7 @@ try:
     
     # OpenAI configuration
     OPENAI_API_KEY = get_env_var("OPENAI_API_KEY")
-    OPENAI_MODEL = get_env_var("OPENAI_MODEL", required=False, default="gpt-4.1-nano")
+    OPENAI_MODEL = get_env_var("OPENAI_MODEL", required=False, default="gpt-4.1-mini")
     
     # Vector search configuration
     DEFAULT_TOP_K = 3  # Количество чанков для поиска по умолчанию

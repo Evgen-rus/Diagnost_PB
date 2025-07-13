@@ -37,6 +37,10 @@ class TokenCounter:
                 'input': 0.0001,  # $0.10 / 1M tokens
                 'output': 0.0004   # $0.40 / 1M tokens
             },
+            'gpt-4.1-mini': {
+                'input': 0.0004,  # $0.40 / 1M tokens
+                'output': 0.0016   # $1.60 / 1M tokens
+            },
             'text-embedding-ada-002': {
                 'input': 0.0001,   # $0.10 / 1M tokens
                 'output': 0.0001   # $0.10 / 1M tokens
@@ -147,8 +151,8 @@ class TokenCounter:
         tokens_logger = get_user_logger(user_id=0, operation="cost_calculation")
         
         if model not in self.price_per_1k:
-            tokens_logger.warning(f"Неизвестная модель {model}, используем цены gpt-4.1-nano")
-            model = 'gpt-4.1-nano'
+            tokens_logger.warning(f"Неизвестная модель {model}, используем цены gpt-4.1-mini")
+            model = 'gpt-4.1-mini'
             
         input_cost = (input_tokens / 1000) * self.price_per_1k[model]['input']
         output_cost = (output_tokens / 1000) * self.price_per_1k[model]['output']

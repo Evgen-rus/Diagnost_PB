@@ -29,7 +29,7 @@ dp = Dispatcher(storage=storage)
 
 # Инициализация OpenAI клиента
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 
 # Инициализация векторного хранилища
 vector_store = None
