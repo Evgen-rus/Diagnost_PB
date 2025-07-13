@@ -31,6 +31,11 @@ try:
     MAX_CONTEXT_TOKENS = 1000  # Максимальное количество токенов для контекста
     EMBEDDING_DIMENSION = 1536  # Размерность эмбеддингов OpenAI text-embedding-3-small
     
+    # FTS search configuration
+    FTS_ENABLED = True  # Включение/выключение FTS поиска
+    FTS_DEFAULT_LIMIT = 3  # Количество результатов FTS поиска по умолчанию
+    HYBRID_SEARCH_ENABLED = True  # Включение гибридного поиска (FTS + векторный)
+    
     logger.info("Конфигурация успешно загружена")
 
 except Exception as e:

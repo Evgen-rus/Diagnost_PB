@@ -16,7 +16,8 @@ import datetime
 import re  # Добавляем импорт модуля регулярных выражений
 from prompts import LEARNING_ASSISTANT_PROMPT, INSTRUCTION, WELCOME_MESSAGE, FIRST_QUESTION_PROMPT
 import sqlite3
-from utils.vector_search import FAISSVectorStore, get_context_for_query, augment_prompt_with_context
+from utils.vector_search import FAISSVectorStore, augment_prompt_with_context
+from utils.hybrid_search import get_hybrid_context
 from config import EMBEDDING_DIMENSION
 
 # Загрузка переменных окружения
@@ -371,7 +372,7 @@ async def get_gpt_response(messages, system_content, additional_system_content=N
                 
                 # Получаем контекст для запроса
                 gpt_logger.info(f"Поиск релевантного контекста для запроса: {user_query[:50]}...")
-                knowledge_context = get_context_for_query(user_query, vector_store, conn)
+                knowledge_context = get_hybrid_context(user_query, vector_store, conn)
                 
                 # Закрываем соединение с базой данных
                 conn.close()
