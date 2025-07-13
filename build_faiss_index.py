@@ -5,7 +5,7 @@
 1. Подключается к базе данных SQLite
 2. Извлекает чанки документов
 3. Создает векторные представления с помощью OpenAI API
-4. Строит индекс FAISS
+4. Строит индекс FAISS с использованием косинусного сходства
 5. Сохраняет индекс в файл
 
 Использование:
@@ -14,6 +14,9 @@
 Примечание:
     Требуется наличие API ключа OpenAI в переменной окружения OPENAI_API_KEY
     или в файле .env в корневой директории проекта.
+    
+    Индекс использует косинусное сходство (IndexFlatIP) для лучшего 
+    семантического поиска с эмбеддингами OpenAI.
 """
 import os
 import sqlite3
@@ -38,7 +41,7 @@ DB_PATH = os.path.join(os.getcwd(), 'knowledge_base_v2.db')
 
 def main():
     """
-    Основная функция для построения индекса FAISS.
+    Основная функция для построения индекса FAISS с косинусным сходством.
     """
     # Проверяем наличие API ключа OpenAI
     if not os.getenv("OPENAI_API_KEY"):
@@ -73,12 +76,14 @@ def main():
         start_time = time.time()
         
         # Строим индекс
-        logger.info("Начинаем построение индекса FAISS...")
+        logger.info("Начинаем построение индекса FAISS с косинусным сходством...")
+        logger.info("Используется IndexFlatIP для семантического поиска с эмбеддингами OpenAI")
         vector_store.build_index(conn, lambda texts: batch_get_embeddings(texts), batch_size=20)
         
         # Выводим информацию о времени выполнения
         elapsed_time = time.time() - start_time
-        logger.info(f"Построение индекса завершено за {elapsed_time:.2f} секунд")
+        logger.info(f"Построение индекса с косинусным сходством завершено за {elapsed_time:.2f} секунд")
+        logger.info("Индекс оптимизирован для поиска по смыслу, а не по длине текста")
         
     except Exception as e:
         logger.error(f"Ошибка при построении индекса: {str(e)}", exc_info=True)

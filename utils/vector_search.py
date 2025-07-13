@@ -119,8 +119,8 @@ class FAISSVectorStore:
         if os.path.exists(self.index_file_path):
             self.load_index()
         else:
-            # Создаем индекс L2 (евклидово расстояние)
-            self.index = faiss.IndexFlatL2(self.embedding_dimension)
+            # Создаем индекс для косинусного сходства (Inner Product)
+            self.index = faiss.IndexFlatIP(self.embedding_dimension)
             vector_logger.info(f"Создан новый индекс FAISS с размерностью {self.embedding_dimension}")
             
         # Загружаем маппинг векторов, если файл существует
@@ -187,7 +187,7 @@ class FAISSVectorStore:
                 vector_logger.info("Добавлен столбец faiss_id в таблицу vector_map")
         
         # Сбрасываем индекс и маппинг, если они уже существуют
-        self.index = faiss.IndexFlatL2(self.embedding_dimension)
+        self.index = faiss.IndexFlatIP(self.embedding_dimension)
         self.vector_map = {}
         
         # Обрабатываем чанки пакетами
@@ -258,7 +258,7 @@ class FAISSVectorStore:
             if not os.path.exists(self.index_file_path):
                 vector_logger.warning(f"Файл индекса не найден: {self.index_file_path}")
                 # Создаем новый индекс
-                self.index = faiss.IndexFlatL2(self.embedding_dimension)
+                self.index = faiss.IndexFlatIP(self.embedding_dimension)
                 vector_logger.info(f"Создан новый индекс с размерностью {self.embedding_dimension}")
                 return False
             
@@ -270,7 +270,7 @@ class FAISSVectorStore:
         except Exception as e:
             vector_logger.error(f"Ошибка при загрузке индекса: {str(e)}")
             # Создаем новый индекс в случае ошибки
-            self.index = faiss.IndexFlatL2(self.embedding_dimension)
+            self.index = faiss.IndexFlatIP(self.embedding_dimension)
             vector_logger.info(f"Создан новый индекс с размерностью {self.embedding_dimension}")
             return False
     
@@ -283,19 +283,19 @@ class FAISSVectorStore:
             top_k: Количество ближайших соседей для поиска (по умолчанию DEFAULT_TOP_K)
             
         Returns:
-            Кортеж (distances, indices), где:
-            - distances: массив расстояний до ближайших соседей
+            Кортеж (similarities, indices), где:
+            - similarities: массив значений сходства до ближайших соседей
             - indices: массив индексов ближайших соседей в индексе FAISS
         """
         # Преобразуем вектор запроса в массив numpy нужной формы
         query_vector_array = np.array([query_vector]).astype('float32')
         
         # Выполняем поиск в индексе
-        distances, indices = self.index.search(query_vector_array, top_k)
+        similarities, indices = self.index.search(query_vector_array, top_k)
         
         vector_logger.info(f"Найдено {len(indices[0])} ближайших соседей для запроса")
         
-        return distances, indices
+        return similarities, indices
 
 def update_vector_map(conn: sqlite3.Connection, chunk_id: int, faiss_id: int):
     """
@@ -401,7 +401,7 @@ def search_relevant_chunks(query: str, vector_store: FAISSVectorStore, conn: sql
     query_embedding = get_embedding_openai(query)
     
     # Ищем ближайшие векторы
-    distances, indices = vector_store.search(query_embedding, top_k)
+    similarities, indices = vector_store.search(query_embedding, top_k)
     
     # Извлекаем ID чанков из индексов FAISS
     faiss_ids = indices[0].tolist()
@@ -417,8 +417,8 @@ def search_relevant_chunks(query: str, vector_store: FAISSVectorStore, conn: sql
     
     # Добавляем информацию о релевантности
     for i, chunk in enumerate(chunks):
-        if i < len(distances[0]):
-            chunk['distance'] = float(distances[0][i])
+        if i < len(similarities[0]):
+            chunk['similarity'] = float(similarities[0][i])  # Больше = лучше
     
     return chunks
 

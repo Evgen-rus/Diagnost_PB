@@ -74,10 +74,10 @@ query_embedding = get_embedding_openai("Что такое диагностика
 
 ### Шаг 2: 🔍 Поиск в FAISS индексе
 ```python
-# FAISS ищет похожие векторы
-distances, indices = vector_store.search(query_embedding, top_k=3)
+# FAISS ищет похожие векторы используя косинусное сходство
+similarities, indices = vector_store.search(query_embedding, top_k=3)
 # Результат: 
-# distances = [1.242, 1.267, 1.268]
+# similarities = [0.892, 0.876, 0.863]  # Больше = лучше
 # indices = [567, 1203, 89]
 ```
 
@@ -108,7 +108,7 @@ chunks = [
         'document_id': 58,
         'doc_type_short': 'СТО',
         'chunk_text': 'С целью обеспечения промышленной безопасности...',
-        'distance': 1.242
+        'similarity': 0.892  # Косинусное сходство
     },
     # ... остальные чанки
 ]
@@ -169,16 +169,15 @@ def hybrid_search_example(query: str):
     # 5. Показываем результаты
     print("5️⃣ Результаты:")
     for i, chunk in enumerate(chunks, 1):
-        distance = chunk.get('distance', 0)
-        relevance = round(1.0 / (1.0 + distance), 4)
+        similarity = chunk.get('similarity', 0)
+        relevance_percent = round(similarity * 100, 1)
         doc_id = chunk.get('document_id', 'N/A')
         doc_type = chunk.get('doc_type_short', 'N/A')
         text_preview = chunk.get('chunk_text', '')[:80] + "..."
         
-        print(f"   {i}. Релевантность: {relevance}")
+        print(f"   {i}. Сходство: {similarity:.3f} ({relevance_percent}%)")
         print(f"      Документ: {doc_id} ({doc_type})")
         print(f"      Текст: {text_preview}")
-        print()
     
     conn.close()
 ```

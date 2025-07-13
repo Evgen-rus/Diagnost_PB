@@ -290,7 +290,7 @@ class TestTable:
                     if chunks:
                         for i, chunk in enumerate(chunks[:3]):  # Максимум 3 чанка
                             if isinstance(chunk, dict):
-                                chunk_text = f"{chunk.get('id', 'unknown')}\n{chunk.get('relevance', 0.0)}\n{chunk.get('content', '')}"
+                                chunk_text = f"{chunk.get('id', 'unknown')}\n{chunk.get('similarity', 0.0)}\n{chunk.get('content', '')}"
                                 chunk_columns[i] = chunk_text
                     
                     row_data = [

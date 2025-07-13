@@ -93,19 +93,15 @@ def test_vector_search():
             
             # Показываем результаты
             for j, chunk in enumerate(relevant_chunks, 1):
-                # Улучшенный расчет релевантности: используем обратную функцию
-                # чем меньше расстояние - тем выше релевантность (0.0-1.0)
-                distance = chunk.get('distance', float('inf'))
-                if distance == 0:
-                    relevance = 1.0
-                else:
-                    relevance = round(1.0 / (1.0 + distance), 4)
+                # Косинусное сходство: чем больше значение - тем выше релевантность
+                similarity = chunk.get('similarity', 0.0)
+                relevance_percent = round(similarity * 100, 1)
                 
                 doc_id = chunk.get('document_id', 'N/A')
                 doc_type = chunk.get('doc_type_short', 'N/A')
                 text_preview = chunk.get('text', chunk.get('content', ''))[:100] + "..."
                 
-                print(f"   {j}. Релевантность: {relevance:.3f} (расстояние: {distance:.3f})")
+                print(f"   {j}. Сходство: {similarity:.3f} ({relevance_percent}%)")
                 print(f"      Документ: {doc_id} ({doc_type})")
                 print(f"      Текст: {text_preview}")
                 print()
